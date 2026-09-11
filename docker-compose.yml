@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:15 # หรือระบุเวอร์ชันที่ต้องการ เช่น postgres:latest
+    container_name: my_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: myuser         # ตั้งชื่อ Username
+      POSTGRES_PASSWORD: mypassword # ตั้งรหัสผ่าน
+      POSTGRES_DB: mydatabase       # ตั้งชื่อฐานข้อมูลเริ่มต้น
+    ports:
+      - "5432:5432" # แมปพอร์ต เครื่องของคุณ : ภายใน Docker
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data # เก็บไฟล์ข้อมูลไว้ในโฟลเดอร์ pg-data
