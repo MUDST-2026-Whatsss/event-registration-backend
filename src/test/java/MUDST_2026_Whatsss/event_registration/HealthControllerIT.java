@@ -16,15 +16,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-class HelloControllerIT {
+class HealthControllerIT {
 
     @Autowired
     private MockMvc mockMvc;
 
     @Test
-    void getHello_ShouldReturnHelloWorld() throws Exception {
-        mockMvc.perform(get("/hello"))
+    void getHealth_ShouldReturnOk() throws Exception {
+        mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("Hello World"));
+                .andExpect(content().string("OK"));
     }
 }

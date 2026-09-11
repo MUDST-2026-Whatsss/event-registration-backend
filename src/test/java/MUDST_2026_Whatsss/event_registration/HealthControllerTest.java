@@ -10,24 +10,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Unit test for {@link HelloController}: loads only the web layer (no full
+ * Unit test for {@link HealthController}: loads only the web layer (no full
  * application context), so it runs fast and checks the controller in isolation.
  */
-@WebMvcTest(HelloController.class)
-class HelloControllerTest {
+@WebMvcTest(HealthController.class)
+class HealthControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
 
     @Test
-    void hello_ShouldReturnOk() throws Exception {
-        mockMvc.perform(get("/hello"))
+    void health_ShouldReturnOk() throws Exception {
+        mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void hello_ShouldReturnHelloWorldBody() throws Exception {
-        mockMvc.perform(get("/hello"))
-                .andExpect(content().string("Hello World"));
+    void health_ShouldReturnOkBody() throws Exception {
+        mockMvc.perform(get("/api/health"))
+                .andExpect(content().string("OK"));
     }
 }
