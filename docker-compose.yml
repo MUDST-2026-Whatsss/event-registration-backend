@@ -6,6 +6,9 @@ services:
     container_name: my_postgres
     restart: always
     environment:
+      POSTGRES_USER: Whatsss         # ตั้งชื่อ Username
+      POSTGRES_PASSWORD: Eventsss # ตั้งรหัสผ่าน
+      POSTGRES_DB: Eventsss_DB       # ตั้งชื่อฐานข้อมูลเริ่มต้น
     ports:
       - "5432:5432" # แมปพอร์ต เครื่องของคุณ : ภายใน Docker
     volumes:
