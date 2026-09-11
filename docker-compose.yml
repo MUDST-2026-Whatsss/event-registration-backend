@@ -13,3 +13,4 @@ services:
       - "5432:5432" # แมปพอร์ต เครื่องของคุณ : ภายใน Docker
     volumes:
       - ./pg-data:/var/lib/postgresql/data # เก็บไฟล์ข้อมูลไว้ในโฟลเดอร์ pg-data
+      - ./DB_init.sql:/docker-entrypoint-initdb.d/init.sql # Initialize database with script
