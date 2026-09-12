@@ -1,6 +1,7 @@
 package MUDST_2026_Whatsss.event_registration.event;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +28,7 @@ public class EventService {
                 .orElseThrow(() -> new EventNotFoundException(id));
     }
 
+    @PreAuthorize("hasAuthority('EVENT_CREATE')")
     public Event createEvent(Event event) {
         validate(event);
         event.setId(null);
@@ -43,6 +45,7 @@ public class EventService {
         return eventRepository.save(event);
     }
 
+    @PreAuthorize("hasAuthority('EVENT_UPDATE')")
     public Event updateEvent(Long id, Event updated) {
         validate(updated);
         Event existing = getEvent(id);
@@ -69,6 +72,7 @@ public class EventService {
         return eventRepository.save(existing);
     }
 
+    @PreAuthorize("hasAuthority('EVENT_CANCEL')")
     public void deleteEvent(Long id) {
         if (!eventRepository.existsById(id)) {
             throw new EventNotFoundException(id);

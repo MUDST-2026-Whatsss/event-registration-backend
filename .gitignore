@@ -59,3 +59,8 @@ replay_pid*
 
 #PostgreSQL
 pg-data/
+
+# Local secrets
+.env
+.env.*
+!.env.example

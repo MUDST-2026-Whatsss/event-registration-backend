@@ -1,0 +1,40 @@
+name: event-registration
+
+# Runs the API against the managed PostgreSQL configured by DB_URL.
+# This file intentionally has no local PostgreSQL service or dependency.
+services:
+  api:
+    image: maven:3.9.16-eclipse-temurin-17
+    working_dir: /workspace
+    command: ["mvn", "-B", "-ntp", "spring-boot:run"]
+    restart: unless-stopped
+    environment:
+      DB_URL: ${DB_URL:?Set the managed PostgreSQL JDBC URL in .env}
+      DB_USERNAME: ${DB_USERNAME:?Set the managed PostgreSQL username in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set the managed PostgreSQL password in .env}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      JWT_ISSUER: ${JWT_ISSUER:-event-registration}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-7d}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      LOCKOUT_MAX_ATTEMPTS: ${LOCKOUT_MAX_ATTEMPTS:-5}
+      LOCKOUT_DURATION: ${LOCKOUT_DURATION:-15m}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_LOGIN_PER_IP: ${RATE_LIMIT_LOGIN_PER_IP:-10}
+      RATE_LIMIT_LOGIN_PER_ACCOUNT: ${RATE_LIMIT_LOGIN_PER_ACCOUNT:-5}
+      RATE_LIMIT_GLOBAL_PER_IP: ${RATE_LIMIT_GLOBAL_PER_IP:-300}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+      RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - .:/workspace
+      - event_registration_maven_cache:/root/.m2
+
+volumes:
+  event_registration_maven_cache:

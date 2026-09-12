@@ -16,6 +16,20 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 
+/**
+ * TEMPORARILY NOT REGISTERED.
+ *
+ * <p>These fields still describe the pre-V6 events table: a {@code Long id}, {@code event_date} and
+ * {@code max_participants}, where the table now has {@code event_id uuid}, {@code start_at} and
+ * {@code maximum_participants}. Under {@code ddl-auto=validate} that mismatch fails schema
+ * validation at startup and takes the whole application down, authentication included.
+ *
+ * <p>The mapping is left intact but kept out of the persistence unit by the {@code @EntityScan} in
+ * {@code EventRegistrationApplication}, which covers only the auth package. To bring the events API
+ * back: remap the fields below to the V6 columns (the id becomes a {@code UUID}), then remove the
+ * scan restrictions in {@code EventRegistrationApplication} and the test exclusions in
+ * {@code pom.xml}.
+ */
 @Entity
 @Table(name = "events")
 @Getter

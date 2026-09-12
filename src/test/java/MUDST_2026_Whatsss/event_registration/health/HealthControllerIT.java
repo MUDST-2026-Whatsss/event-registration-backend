@@ -1,5 +1,6 @@
 package MUDST_2026_Whatsss.event_registration.health;
 
+import MUDST_2026_Whatsss.event_registration.PostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -18,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-class HealthControllerIT {
+class HealthControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -43,8 +44,8 @@ class HealthControllerIT {
     }
 
     @Test
-    void unknownPath_ShouldReturnNotFound() throws Exception {
+    void unknownPath_ShouldBeDeniedByDefault() throws Exception {
         mockMvc.perform(get("/api/does-not-exist"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 }
