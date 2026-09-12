@@ -1,4 +1,4 @@
-package MUDST_2026_Whatsss.event_registration;
+package MUDST_2026_Whatsss.event_registration.health;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

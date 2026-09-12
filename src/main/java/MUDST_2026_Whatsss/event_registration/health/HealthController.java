@@ -1,4 +1,4 @@
-package MUDST_2026_Whatsss.event_registration;
+package MUDST_2026_Whatsss.event_registration.health;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
