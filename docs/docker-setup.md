@@ -3,7 +3,13 @@
 คู่มือนี้ใช้สำหรับเริ่ม backend หลัง clone repository ใหม่ รวมถึงสำรองฐานข้อมูลจาก
 managed PostgreSQL และนำข้อมูลกลับมาใช้กับ PostgreSQL ใน Docker เครื่อง local
 
-## ติดตั้งระบบพร้อม database dump
+| ระบบปฏิบัติการ | Terminal | ขั้นตอนที่ใช้ |
+| --- | --- | --- |
+| macOS | Terminal (`zsh`/`bash`) | Flow macOS/Linux |
+| Windows 10/11 | PowerShell 5.1+ หรือ PowerShell 7 | Flow Windows PowerShell |
+| Windows + WSL2 | Shell ใน WSL | Flow macOS/Linux หลังเปิด Docker Desktop WSL integration |
+
+## ติดตั้งระบบพร้อม database dump — macOS/Linux
 
 ส่วนนี้เป็น flow หลักสำหรับติดตั้งระบบจาก source code และไฟล์ database dump ทำตามจากบนลงล่าง
 จนเปิดหน้าเว็บและ login ได้
@@ -192,11 +198,203 @@ User ที่อยู่ใน dump ใช้ password เดิม หาก�
 ถ้าต้องใช้รูปเดิม ต้อง restore MinIO bucket backup เพิ่มด้วย การ restore database อย่างเดียวทำให้
 event metadata อยู่ครบ แต่ URL รูปเดิมอาจตอบ `404` เพราะ object ไม่ได้อยู่ใน MinIO local
 
+## ติดตั้งระบบพร้อม database dump — Windows PowerShell
+
+ใช้ PowerShell เปิดจากโฟลเดอร์ที่ต้องการเก็บ project คำสั่งส่วนนี้ไม่ต้องใช้ WSL, Git Bash หรือ
+คำสั่ง Unix และหลีกเลี่ยงการ pipe ไฟล์ dump แบบ binary ผ่าน PowerShell
+
+### A. Clone frontend และ backend
+
+```powershell
+New-Item -ItemType Directory -Path event-registration-workspace -Force
+Set-Location event-registration-workspace
+
+git clone https://github.com/MUDST-2026-Whatsss/event-registration-backend.git
+git clone https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
+Set-Location event-registration-backend
+```
+
+### B. วางและตรวจ database dump
+
+วาง dump และ checksum file ใน `event-registration-backend\backups\` แล้วกำหนดชื่อไฟล์:
+
+```powershell
+New-Item -ItemType Directory -Path backups -Force
+$BackupFile = "event-registration-server-20260925-210801.dump"
+$DumpPath = Join-Path $PWD "backups\$BackupFile"
+
+if (-not (Test-Path $DumpPath)) {
+    throw "Database dump not found: $DumpPath"
+}
+
+Get-FileHash -Algorithm SHA256 $DumpPath
+```
+
+หากมี `.sha256` ให้ตรวจอัตโนมัติ:
+
+```powershell
+$ChecksumPath = "$DumpPath.sha256"
+$ExpectedHash = ((Get-Content $ChecksumPath -Raw).Trim() -split '\s+')[0]
+$ActualHash = (Get-FileHash -Algorithm SHA256 $DumpPath).Hash
+
+if ($ActualHash -ne $ExpectedHash) {
+    throw "Database dump checksum does not match. Do not restore this file."
+}
+
+Write-Host "Database dump checksum: OK"
+```
+
+ตรวจว่า PostgreSQL archive เปิดอ่านได้:
+
+```powershell
+$BackupDirectory = (Resolve-Path backups).Path
+
+docker run --rm `
+  --mount "type=bind,source=$BackupDirectory,target=/backups,readonly" `
+  postgres:18.6 `
+  pg_restore --list "/backups/$BackupFile" | Out-Null
+
+if ($LASTEXITCODE -ne 0) {
+    throw "PostgreSQL archive validation failed."
+}
+```
+
+### C. สร้าง local environment
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+สร้าง secret ด้วย PowerShell โดยไม่ต้องติดตั้ง OpenSSL:
+
+```powershell
+function New-RandomBase64([int] $ByteLength) {
+    $Bytes = New-Object byte[] $ByteLength
+    $Generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $Generator.GetBytes($Bytes)
+        [Convert]::ToBase64String($Bytes)
+    }
+    finally {
+        $Generator.Dispose()
+    }
+}
+
+New-RandomBase64 36
+New-RandomBase64 48
+notepad .env.local
+```
+
+แทน placeholder ของ `POSTGRES_PASSWORD`, `JWT_SECRET`, `STORAGE_ACCESS_KEY` และ
+`STORAGE_SECRET_KEY` คงค่า local profile, cookie และ CORS ตามหัวข้อ macOS/Linux จากนั้นตรวจ:
+
+```powershell
+docker compose --env-file .env.local config --quiet
+if ($LASTEXITCODE -ne 0) {
+    throw "Docker Compose configuration is invalid."
+}
+```
+
+### D. เปิด PostgreSQL และ MinIO local
+
+```powershell
+docker compose --env-file .env.local up -d --build postgres minio
+docker compose --env-file .env.local ps
+
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'pg_isready --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"'
+```
+
+รอจน PostgreSQL แสดง `healthy` และ `accepting connections`
+
+### E. Restore dump ลง local PostgreSQL
+
+ขั้นตอนนี้ลบเฉพาะ database ใน Docker local และใช้ environment ภายใน PostgreSQL container จึง
+ไม่ต้อง import `.env.local` เข้า PowerShell
+
+```powershell
+docker compose --env-file .env.local stop api
+
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'dropdb --if-exists --force --username="$POSTGRES_USER" "$POSTGRES_DB"'
+
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'createdb --username="$POSTGRES_USER" "$POSTGRES_DB"'
+
+docker compose --env-file .env.local cp `
+  "backups/$BackupFile" postgres:/tmp/event-registration.dump
+
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'pg_restore --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --no-owner --no-privileges --exit-on-error /tmp/event-registration.dump'
+
+docker compose --env-file .env.local exec -T postgres `
+  rm -f /tmp/event-registration.dump
+```
+
+อย่าใช้ `Get-Content file.dump | docker ...` เพราะ Windows PowerShell บางรุ่นอาจแปลง binary
+stream ทำให้ archive เสีย การ copy เข้า container ก่อน restore ปลอดภัยกว่า
+
+### F. เปิดและตรวจ API
+
+```powershell
+docker compose --env-file .env.local up -d api
+docker compose --env-file .env.local logs -f api
+```
+
+เมื่อ application started ให้กด `Ctrl+C` แล้วตรวจ health:
+
+```powershell
+(Invoke-WebRequest -UseBasicParsing http://localhost:8080/api/health).StatusCode
+(Invoke-WebRequest -UseBasicParsing http://localhost:8080/actuator/health).StatusCode
+```
+
+ทั้งสองคำสั่งต้องตอบ `200` จากนั้นตรวจ migration และ role:
+
+```powershell
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"'
+
+docker compose --env-file .env.local exec -T postgres `
+  sh -c 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SELECT role_code FROM auth_roles ORDER BY role_code;"'
+```
+
+### G. เปิด frontend
+
+เปิด PowerShell อีกหน้าต่าง:
+
+```powershell
+Set-Location path\to\event-registration-workspace\event-registration-frontend
+Copy-Item .env.example .env
+npm.cmd ci
+npm.cmd run dev
+```
+
+เปิด `http://localhost:5173` แล้วทดสอบ register/login ใช้ `npm.cmd` เพื่อหลีกเลี่ยงปัญหา
+PowerShell execution policy ที่อาจ block `npm.ps1`
+
+### H. คำสั่งใช้งานประจำบน Windows
+
+```powershell
+# เริ่มระบบ
+docker compose --env-file .env.local up -d
+
+# ดูสถานะและ log
+docker compose --env-file .env.local ps
+docker compose --env-file .env.local logs --tail=200 api postgres minio
+
+# หยุด container โดยเก็บข้อมูลใน volume
+docker compose --env-file .env.local down
+```
+
+ห้ามเติม `-v` ในคำสั่ง `down` หากยังไม่มี backup เพราะจะลบ PostgreSQL และ MinIO local
+ถ้าใช้ WSL ให้เปิด Docker Desktop WSL integration แล้วทำตาม flow macOS/Linux แทน
+
 ## 1. สิ่งที่ต้องติดตั้ง
 
 - Git
 - Docker Desktop พร้อม Docker Compose v2
 - Node.js `^22.18.0` หรือ `>=24.12.0` และ npm สำหรับ frontend
+- macOS ใช้ `zsh`/`bash`; Windows ใช้ PowerShell 5.1+ หรือ PowerShell 7
 - พอร์ตว่างสำหรับ API, PostgreSQL และ MinIO (ค่าเริ่มต้น `8080`, `5432`, `9000`, `9001`)
 - Internet สำหรับดาวน์โหลด image/dependency ในการ build ครั้งแรก
 
@@ -388,15 +586,12 @@ PostgreSQL และ MinIO local อย่างถาวร จึงต้อ�
 คำสั่งแก้ข้อมูลทดลองกับ production/shared database
 
 ```bash
-docker compose --env-file .env.server \
-  -f docker-compose.server.yml config --quiet
-
-docker compose --env-file .env.server \
-  -f docker-compose.server.yml up -d --build minio api
-
-docker compose --env-file .env.server \
-  -f docker-compose.server.yml logs -f api
+docker compose --env-file .env.server -f docker-compose.server.yml config --quiet
+docker compose --env-file .env.server -f docker-compose.server.yml up -d --build minio api
+docker compose --env-file .env.server -f docker-compose.server.yml logs -f api
 ```
+
+สามคำสั่งนี้ใช้ได้ทั้ง macOS/Linux shell และ Windows PowerShell
 
 ## 5. สำรอง managed PostgreSQL ลงเครื่อง
 
@@ -404,6 +599,8 @@ Database dump มีข้อมูล account, participant, session metadata �
 ในเครื่องที่ได้รับอนุญาต จำกัดสิทธิ์ไฟล์ และลบเมื่อหมดความจำเป็น
 
 คำสั่งนี้ใช้ PostgreSQL 18 client ใน Docker เพื่อไม่ให้ติดปัญหา `pg_dump` รุ่นเก่ากว่า server:
+
+### macOS/Linux
 
 ```bash
 set -a
@@ -441,6 +638,79 @@ docker run --rm \
 ls -lh "backups/$BACKUP_FILE"
 ```
 
+สร้าง checksum file สำหรับตรวจความถูกต้องภายหลัง:
+
+```bash
+cd backups
+shasum -a 256 "$BACKUP_FILE" > "$BACKUP_FILE.sha256"
+chmod 600 "$BACKUP_FILE.sha256"
+shasum -a 256 -c "$BACKUP_FILE.sha256"
+cd ..
+```
+
+### Windows PowerShell
+
+โหลดค่าจาก `.env.server` เข้า process ปัจจุบัน:
+
+```powershell
+Get-Content .env.server | ForEach-Object {
+    $Line = $_.Trim()
+    if ($Line -and -not $Line.StartsWith("#")) {
+        $Parts = $Line -split "=", 2
+        if ($Parts.Count -eq 2) {
+            Set-Item -Path "Env:$($Parts[0].Trim())" -Value $Parts[1].Trim()
+        }
+    }
+}
+
+if (-not $env:DB_URL -or -not $env:DB_USERNAME -or -not $env:DB_PASSWORD) {
+    throw "DB_URL, DB_USERNAME and DB_PASSWORD are required in .env.server."
+}
+```
+
+สร้าง dump ด้วย PostgreSQL 18 client ใน Docker:
+
+```powershell
+New-Item -ItemType Directory -Path backups -Force
+$BackupFile = "event-registration-$((Get-Date).ToString('yyyyMMdd-HHmmss')).dump"
+$BackupDirectory = (Resolve-Path backups).Path
+$DatabaseUrl = $env:DB_URL -replace '^jdbc:', ''
+
+docker run --rm `
+  --env "PGPASSWORD=$($env:DB_PASSWORD)" `
+  --mount "type=bind,source=$BackupDirectory,target=/backups" `
+  postgres:18.6 `
+  pg_dump `
+    "--dbname=$DatabaseUrl" `
+    "--username=$($env:DB_USERNAME)" `
+    --format=custom `
+    --compress=9 `
+    --no-owner `
+    --no-privileges `
+    "--file=/backups/$BackupFile"
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Database backup failed."
+}
+```
+
+ตรวจ archive และสร้าง checksum file:
+
+```powershell
+docker run --rm `
+  --mount "type=bind,source=$BackupDirectory,target=/backups,readonly" `
+  postgres:18.6 `
+  pg_restore --list "/backups/$BackupFile" | Out-Null
+
+if ($LASTEXITCODE -ne 0) {
+    throw "PostgreSQL archive validation failed."
+}
+
+$Hash = (Get-FileHash -Algorithm SHA256 "backups/$BackupFile").Hash.ToLowerInvariant()
+"$Hash  $BackupFile" | Set-Content -Encoding ascii "backups/$BackupFile.sha256"
+Get-Item "backups/$BackupFile", "backups/$BackupFile.sha256"
+```
+
 `pg_dump` เป็น consistent logical backup และไม่ต้องหยุด API แต่ข้อมูลที่ commit หลัง snapshot
 เริ่มต้นจะไม่อยู่ในไฟล์นี้ หากต้องการ backup ที่ผูกกับเวลาธุรกรรมสำคัญให้หยุดการเขียนข้อมูลก่อน
 
@@ -448,6 +718,8 @@ ls -lh "backups/$BACKUP_FILE"
 
 ขั้นตอนนี้จะลบ database local ปลายทางก่อน restore และไม่กระทบ managed PostgreSQL บน server
 ตรวจให้แน่ใจว่าโหลด `.env.local` ไม่ใช่ `.env.server`
+
+### macOS/Linux
 
 ```bash
 set -a
@@ -477,6 +749,9 @@ docker compose --env-file .env.local exec -T postgres \
 docker compose --env-file .env.local up -d api
 docker compose --env-file .env.local logs -f api
 ```
+
+บน Windows PowerShell ให้ใช้หัวข้อ **E. Restore dump ลง local PostgreSQL** ใน flow Windows
+ด้านบน ซึ่งใช้ `docker compose cp` แทน binary redirection
 
 ตรวจ migration และจำนวน table หลัง restore:
 
