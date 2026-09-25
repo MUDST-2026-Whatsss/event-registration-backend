@@ -1,13 +1,17 @@
 package MUDST_2026_Whatsss.event_registration.auth.repository;
 
 import MUDST_2026_Whatsss.event_registration.auth.domain.AuthUser;
+import MUDST_2026_Whatsss.event_registration.auth.domain.UserStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface AuthUserRepository extends JpaRepository<AuthUser, UUID> {
@@ -40,4 +44,53 @@ public interface AuthUserRepository extends JpaRepository<AuthUser, UUID> {
     Optional<AuthUser> findByIdForUpdate(@Param("userId") UUID userId);
 
     boolean existsByEmailNormalized(String emailNormalized);
+
+    @Query("""
+            select distinct u from AuthUser u
+            join fetch u.roles r
+            where r.roleCode = :roleCode and r.status = 'ACTIVE' and u.status = 'ACTIVE'
+            order by u.email
+            """)
+    List<AuthUser> findActiveByRoleCode(@Param("roleCode") String roleCode);
+
+    @Query(value = """
+            select distinct u from AuthUser u
+            left join u.roles r
+            where (:query = ''
+                   or lower(u.email) like lower(concat('%', :query, '%')))
+              and (:status is null or u.status = :status)
+              and (:roleCode = '' or r.roleCode = :roleCode)
+            """,
+            countQuery = """
+            select count(distinct u.userId) from AuthUser u
+            left join u.roles r
+            where (:query = ''
+                   or lower(u.email) like lower(concat('%', :query, '%')))
+              and (:status is null or u.status = :status)
+              and (:roleCode = '' or r.roleCode = :roleCode)
+            """)
+    Page<AuthUser> findForAdministration(
+            @Param("query") String query,
+            @Param("status") UserStatus status,
+            @Param("roleCode") String roleCode,
+            Pageable pageable);
+
+    long countByStatus(UserStatus status);
+
+    @Query("""
+            select count(distinct u.userId) from AuthUser u
+            join u.roles r
+            where u.status = 'ACTIVE' and r.roleCode in :roleCodes and r.status = 'ACTIVE'
+            """)
+    long countActiveByRoleCodes(@Param("roleCodes") List<String> roleCodes);
+
+    @Query("""
+            select count(distinct u.userId) from AuthUser u
+            join u.roles r
+            where u.status = 'ACTIVE' and r.roleCode = :roleCode and r.status = 'ACTIVE'
+            """)
+    long countActiveByRoleCode(@Param("roleCode") String roleCode);
+
+    @Query("select count(distinct u.userId) from AuthUser u join u.roles r where r.roleCode = :roleCode")
+    long countByRoleCode(@Param("roleCode") String roleCode);
 }

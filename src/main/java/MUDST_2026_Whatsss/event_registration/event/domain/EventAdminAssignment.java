@@ -28,7 +28,9 @@ import java.util.UUID;
 public class EventAdminAssignment {
 
     public static final String ROLE_OWNER = "OWNER";
+    public static final String ROLE_EVENT_ADMIN = "EVENT_ADMIN";
     public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_REMOVED = "REMOVED";
 
     @Id
     @GeneratedValue

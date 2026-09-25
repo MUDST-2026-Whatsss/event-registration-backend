@@ -31,6 +31,8 @@ import java.util.UUID;
 public class EventChangeRequest {
 
     public static final String PENDING = "PENDING";
+    public static final String APPROVED = "APPROVED";
+    public static final String REJECTED = "REJECTED";
 
     @Id
     @GeneratedValue

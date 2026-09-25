@@ -11,9 +11,12 @@ import MUDST_2026_Whatsss.event_registration.event.repository.EventChangeRequest
 import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventReviewRepository;
 import MUDST_2026_Whatsss.event_registration.event.service.AdminEventService;
+import MUDST_2026_Whatsss.event_registration.event.service.SuperAdminEventService;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.CancelEventRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestCreateRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventWriteRequest;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.ReviewDecisionRequest;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.ReplaceEventAdminsRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,9 +43,11 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
     @Autowired private EventRepository eventRepository;
     @Autowired private EventChangeRequestRepository changeRequestRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private SuperAdminEventService superAdminService;
 
     private UUID adminId;
     private AuthenticatedUser principal;
+    private AuthenticatedUser superAdmin;
 
     @BeforeEach
     void setUp() {
@@ -52,6 +58,13 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
         principal = new AuthenticatedUser(
                 adminId, "admin@example.test", "ADMIN", List.of("ADMIN"),
                 List.of("EVENT_CREATE", "EVENT_UPDATE", "EVENT_CANCEL"));
+        UUID superAdminId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "insert into auth_users (user_id, email, password_hash, status) values (?, ?, ?, ?)",
+                superAdminId, "super-" + superAdminId + "@example.test", "test-hash", "ACTIVE");
+        superAdmin = new AuthenticatedUser(
+                superAdminId, "super@example.test", "SUPER_ADMIN", List.of("SUPER_ADMIN"),
+                List.of());
     }
 
     @Test
@@ -106,6 +119,73 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
         assertThat(changeRequestRepository.existsByEvent_EventIdAndStatus(
                 created.eventId(), "PENDING")).isTrue();
         assertThat(service.changeRequests(created.eventId(), principal)).hasSize(1);
+    }
+
+    @Test
+    void superAdminApprovesSubmittedEventAndRecordsDecision() {
+        var created = service.create(validRequest("Review approval event"), principal);
+        var submitted = service.submit(created.eventId(), created.version(), principal);
+        var review = reviewRepository.findByEvent_EventIdAndDecision(
+                created.eventId(), "PENDING").orElseThrow();
+
+        var approved = superAdminService.approveReview(
+                review.getReviewId(), new ReviewDecisionRequest(submitted.version(), "Ready"),
+                superAdmin);
+
+        assertThat(approved.decision()).isEqualTo("APPROVED");
+        assertThat(approved.event().status()).isEqualTo(EventStatus.PUBLISHED);
+        assertThat(eventRepository.findById(created.eventId()).orElseThrow().getPublishedAt())
+                .isNotNull();
+        assertThat(reviewRepository.findById(review.getReviewId()).orElseThrow().getReviewedBy())
+                .isNotNull();
+    }
+
+    @Test
+    void superAdminApprovesChangeRequestAndAppliesStoredDiff() {
+        EventWriteRequest original = validRequest("Before approved change");
+        var created = service.create(original, principal);
+        var event = eventRepository.findById(created.eventId()).orElseThrow();
+        event.setStatus(EventStatus.PUBLISHED);
+        event.setPublishedAt(Instant.now());
+        eventRepository.saveAndFlush(event);
+        var published = service.get(created.eventId(), principal);
+        var request = service.requestChanges(
+                created.eventId(), published.version(),
+                new EventChangeRequestCreateRequest(
+                        "Final title", withTitle(original, "After approved change")), principal);
+
+        var approved = superAdminService.approveChangeRequest(
+                request.changeRequestId(), new ReviewDecisionRequest(request.version(), "Approved"),
+                superAdmin);
+
+        assertThat(approved.status()).isEqualTo("APPROVED");
+        assertThat(eventRepository.findById(created.eventId()).orElseThrow().getTitle())
+                .isEqualTo("After approved change");
+    }
+
+    @Test
+    void superAdminAssignsEligibleAdminAndPreservesOwner() {
+        var created = service.create(validRequest("Assignment event"), principal);
+        UUID assignedAdminId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "insert into auth_users (user_id, email, password_hash, status) values (?, ?, ?, ?)",
+                assignedAdminId, "assigned-" + assignedAdminId + "@example.test", "test-hash", "ACTIVE");
+        UUID adminRoleId = jdbcTemplate.queryForObject(
+                "select role_id from auth_roles where role_code = 'ADMIN'", UUID.class);
+        jdbcTemplate.update(
+                "insert into auth_user_roles (user_id, role_id) values (?, ?)",
+                assignedAdminId, adminRoleId);
+
+        var assignments = superAdminService.replaceEventAdmins(
+                created.eventId(), new ReplaceEventAdminsRequest(Set.of(assignedAdminId)),
+                superAdmin);
+
+        assertThat(assignments).extracting(item -> item.userId())
+                .containsExactlyInAnyOrder(adminId, assignedAdminId);
+        assertThat(assignments).filteredOn(item -> item.userId().equals(adminId))
+                .allMatch(item -> item.owner());
+        assertThat(superAdminService.adminCandidates()).extracting(item -> item.userId())
+                .contains(assignedAdminId);
     }
 
     private EventWriteRequest validRequest(String title) {
