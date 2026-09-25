@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,7 +48,7 @@ class EventWriteRequestTest {
                 "Technology Conference",
                 "A participant-safe summary",
                 "Description",
-                null,
+                UUID.fromString("10000000-0000-0000-0000-000000000001"),
                 type,
                 price,
                 "THB",

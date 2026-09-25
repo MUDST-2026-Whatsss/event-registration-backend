@@ -36,12 +36,12 @@ entities.
 | `auth` | Active | Accounts, participant profile, cookies, JWT, sessions, roles/permissions, lockout, and rate limiting |
 | `health` | Active | Lightweight and Actuator health checks |
 | `common` | Active | JSON configuration and stable error responses |
-| `event` | Active foundation | UUID entities, lifecycle enums, category/creator mappings, validated DTOs, and pageable repositories; public controllers are next |
+| `event` | Active | Assigned Admin list/stats, draft/update/submit/withdraw/cancel, published-event change requests, audit writes, categories, and optimistic locking; public catalogue is next |
 | `storage` | Active | MinIO client, private bucket, event-image validation, upload/read/delete, and URL resolution |
 | `registration` | Planned | Capacity, registration lifecycle, cancellation, QR, and check-in |
 | `payment` | Planned scaffold | Provider abstraction and verified payment state |
-| `administration` | Planned | Review, change request, assignment, user, and role operations |
-| `audit` | Planned service/API | Append-only administrative audit records |
+| `administration` | Partial | Admin ownership and change-request submission are active; Super Admin review/assignment and user/role operations are planned |
+| `audit` | Partial | Admin event lifecycle writes append-only records; audit query API is planned |
 | `notification` | Planned | Transactional outbox and email delivery |
 
 ## Security model

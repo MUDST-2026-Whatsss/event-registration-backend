@@ -16,13 +16,23 @@ Base path: `/api/v1`
 | GET | `/api/v1/auth/me` | Authenticated | Active |
 | PATCH | `/api/v1/auth/me` | Authenticated | Active |
 | POST | `/api/v1/auth/change-password` | Authenticated | Active |
+| GET | `/api/v1/event-categories` | Public | Active |
+| GET | `/api/v1/admin/events` | Assigned ADMIN or SUPER_ADMIN | Active, paginated |
+| GET | `/api/v1/admin/events/stats` | Assigned ADMIN or SUPER_ADMIN | Active |
+| POST | `/api/v1/admin/events` | `EVENT_CREATE` or SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/events/{eventId}` | Assigned ADMIN or SUPER_ADMIN | Active |
+| PATCH | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED |
+| POST | `/api/v1/admin/events/{eventId}/submit?version=` | `EVENT_UPDATE`, assigned scope | Active |
+| POST | `/api/v1/admin/events/{eventId}/withdraw?version=` | `EVENT_UPDATE`, assigned scope | Active |
+| POST | `/api/v1/admin/events/{eventId}/cancel` | `EVENT_CANCEL`, assigned scope | Active |
+| GET | `/api/v1/admin/events/{eventId}/change-requests` | Assigned ADMIN or SUPER_ADMIN | Active |
+| POST | `/api/v1/admin/events/{eventId}/change-requests?version=` | `EVENT_UPDATE`, published event | Active |
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
 | DELETE | `/api/v1/event-images/{ownerId}/{fileName}` | Owner ADMIN or SUPER_ADMIN | Active when storage is enabled |
 | GET | `/api/v1/media/event-images/{ownerId}/{fileName}` | Public | Active when storage is enabled |
 
-The legacy `/api/events` controller has been removed. Event entities and repositories now map the
-current UUID schema, but public event controllers remain planned for `/api/v1/events` and
-`/api/v1/event-categories`.
+The legacy `/api/events` controller has been removed. Public event list/detail controllers remain
+planned for `/api/v1/events`; event categories and the assigned Admin lifecycle are active.
 
 ## Event image storage
 
@@ -41,8 +51,8 @@ file bytes rather than trusting its extension or browser-provided Content-Type.
 }
 ```
 
-The future create/update Event API accepts `objectKey`, not an arbitrary external URL. The public
-event response exposes only the resolved `imageUrl`. Event images are immutable because their keys
+The Admin create/update and change-request APIs accept `imageObjectKey`, not an arbitrary external
+URL. Responses expose the resolved `imageUrl`. Event images are immutable because their keys
 contain a generated UUID, so public reads use a one-year immutable cache header.
 
 ## Cookies and CSRF
@@ -75,7 +85,7 @@ Do not branch frontend logic on human-readable messages.
 ## Planned endpoint groups
 
 - Public catalogue: categories, event search/list, event detail
-- Admin events: draft, update, submit, withdraw, cancel, scoped list
+- Admin event lifecycle is active; dashboard-specific trends and registration totals remain planned
 - Super-admin governance: review decisions, change requests, event-admin assignments
 - Registrations: create, list mine, detail, cancel, QR
 - Event operations: participant list, admin cancellation, check-in, CSV export
