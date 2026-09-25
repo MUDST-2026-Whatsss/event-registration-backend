@@ -30,6 +30,28 @@ Base path: `/api/v1`
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
 | DELETE | `/api/v1/event-images/{ownerId}/{fileName}` | Owner ADMIN or SUPER_ADMIN | Active when storage is enabled |
 | GET | `/api/v1/media/event-images/{ownerId}/{fileName}` | Public | Active when storage is enabled |
+| GET | `/api/v1/admin/event-reviews` | SUPER_ADMIN | Active; paginated queue/history |
+| GET | `/api/v1/admin/event-reviews/{reviewId}` | SUPER_ADMIN | Active |
+| POST | `/api/v1/admin/event-reviews/{reviewId}/approve` | SUPER_ADMIN | Active; row lock and version check |
+| POST | `/api/v1/admin/event-reviews/{reviewId}/reject` | SUPER_ADMIN | Active; rejection comment required |
+| GET | `/api/v1/admin/change-requests` | SUPER_ADMIN | Active; paginated queue/history |
+| GET | `/api/v1/admin/change-requests/{requestId}` | SUPER_ADMIN | Active; field-level diff |
+| POST | `/api/v1/admin/change-requests/{requestId}/approve` | SUPER_ADMIN | Active; applies stored diff atomically |
+| POST | `/api/v1/admin/change-requests/{requestId}/reject` | SUPER_ADMIN | Active; rejection comment required |
+| GET | `/api/v1/admin/event-admins` | SUPER_ADMIN | Active; assignment candidates |
+| GET | `/api/v1/admin/events/{eventId}/admins` | SUPER_ADMIN | Active |
+| PUT | `/api/v1/admin/events/{eventId}/admins` | SUPER_ADMIN | Active; preserves event owner |
+| GET | `/api/v1/admin/users` | SUPER_ADMIN | Active; paginated search/status/role filters |
+| GET | `/api/v1/admin/users/stats` | SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/users/{userId}` | SUPER_ADMIN | Active |
+| PATCH | `/api/v1/admin/users/{userId}/status` | SUPER_ADMIN | Active; disabling revokes sessions |
+| PUT | `/api/v1/admin/users/{userId}/roles` | SUPER_ADMIN | Active; replaces assigned role set |
+| GET | `/api/v1/admin/roles` | SUPER_ADMIN | Active; includes permissions and usage count |
+| POST | `/api/v1/admin/roles` | SUPER_ADMIN | Active; creates custom role |
+| PATCH | `/api/v1/admin/roles/{roleId}` | SUPER_ADMIN | Active |
+| PUT | `/api/v1/admin/roles/{roleId}/permissions` | SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/permissions` | SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/audit-logs` | SUPER_ADMIN | Active; immutable paginated history |
 
 The legacy `/api/events` controller has been removed. Public event list/detail controllers remain
 planned for `/api/v1/events`; event categories and the assigned Admin lifecycle are active.
@@ -86,10 +108,10 @@ Do not branch frontend logic on human-readable messages.
 
 - Public catalogue: categories, event search/list, event detail
 - Admin event lifecycle is active; dashboard-specific trends and registration totals remain planned
-- Super-admin governance: review decisions, change requests, event-admin assignments
+- Super-admin event governance, users, roles, permissions, and audit history are active
 - Registrations: create, list mine, detail, cancel, QR
 - Event operations: participant list, admin cancellation, check-in, CSV export
-- Administration: users, roles, permissions, invitations, audit logs, dashboards
+- Administration still planned: invitations and aggregate dashboard endpoints
 - Auth completion: forgot/reset password, email verification, invitation acceptance
 - Payment: disabled provider abstraction first, verified provider/webhook integration later
 
