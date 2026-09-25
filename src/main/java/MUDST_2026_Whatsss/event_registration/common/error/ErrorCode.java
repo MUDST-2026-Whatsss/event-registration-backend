@@ -28,6 +28,15 @@ public enum ErrorCode {
 
     INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "The current password is incorrect."),
 
+    EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested event was not found."),
+    EVENT_CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested event category was not found."),
+    INVALID_EVENT_STATE(HttpStatus.CONFLICT, "The event cannot perform that transition in its current state."),
+    EVENT_VERSION_CONFLICT(HttpStatus.CONFLICT, "The event changed while it was being edited. Reload and try again."),
+
+    INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "The uploaded file is not a supported image."),
+    MEDIA_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested media was not found."),
+    STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Image storage is temporarily unavailable."),
+
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Slow down and try again."),
     PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "The request body is too large."),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "The request method is not allowed."),
