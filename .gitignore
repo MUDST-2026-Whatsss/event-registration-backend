@@ -1,4 +1,3 @@
-
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
@@ -32,11 +31,26 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### OS Generated Files ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
 # Compiled class file
 *.class
 
 # Log file
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # BlueJ files
 *.ctxt
@@ -57,13 +71,39 @@ build/
 hs_err_pid*
 replay_pid*
 
-#PostgreSQL
 pg-data/
+*.sqlite
+*.sqlite3
+*.db
 
-# Local secrets
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+secrets.json
+credentials.json
+config.local.js
+config.local.json
+
+# Dependencies
+node_modules/
+**/node_modules/
+vendor/
+venv/
+.venv/
+env/
+.pnpm-store/
+
+# Unit Test runtime & output logs
+Unit_test/node_modules/
+Unit_test/Result/*.log
+!Unit_test/Result/test_summary.md
 
 # Database backups may contain accounts, sessions, and personal data.
 /backups/
+
