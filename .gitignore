@@ -71,11 +71,13 @@ pnpm-debug.log*
 hs_err_pid*
 replay_pid*
 
+# PostgreSQL & Databases
 pg-data/
 *.sqlite
 *.sqlite3
 *.db
 
+# Local secrets & credentials
 .env
 .env.*
 !.env.example
