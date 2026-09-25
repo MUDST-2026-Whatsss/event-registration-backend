@@ -121,4 +121,5 @@ V8 adds PostgreSQL table/column documentation without changing business data.
 - [`docs/api.md`](docs/api.md): current API contract and endpoint status
 - [`docs/database.md`](docs/database.md): schema ownership and table dictionary
 - [`docs/development.md`](docs/development.md): development and verification workflow
+- [`docs/docker-setup.md`](docs/docker-setup.md): clone-to-running Docker setup and database backup/restore
 - [`src/main/resources/db/migration/README.md`](src/main/resources/db/migration/README.md): migration history notes

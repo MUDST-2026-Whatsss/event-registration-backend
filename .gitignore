@@ -64,3 +64,6 @@ pg-data/
 .env
 .env.*
 !.env.example
+
+# Database backups may contain accounts, sessions, and personal data.
+/backups/
