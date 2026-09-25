@@ -118,9 +118,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
-
-                        // Browsing the catalogue stays open; mutations do not.
-                        .requestMatchers(HttpMethod.GET, "/api/events", "/api/events/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
 
                         .anyRequest().authenticated())
 

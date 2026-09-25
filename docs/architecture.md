@@ -13,6 +13,18 @@ HTTP request
   -> PostgreSQL
 ```
 
+Event cover upload/read flow:
+
+```text
+authenticated ADMIN/SUPER_ADMIN
+  -> multipart upload endpoint
+  -> byte signature, size, and dimension validation
+  -> provider-neutral ObjectStorage boundary
+  -> private MinIO bucket + persistent Docker volume
+  -> object key stored with the event
+  -> public immutable image URL proxied by the API
+```
+
 Controllers own HTTP concerns only. Services own lifecycle, permission scope, concurrency, and
 transaction boundaries. Repositories own persistence queries. Responses use DTOs rather than JPA
 entities.
@@ -24,7 +36,8 @@ entities.
 | `auth` | Active | Accounts, participant profile, cookies, JWT, sessions, roles/permissions, lockout, and rate limiting |
 | `health` | Active | Lightweight and Actuator health checks |
 | `common` | Active | JSON configuration and stable error responses |
-| `event` | Temporarily disabled | Must be remapped from legacy numeric IDs to the current UUID schema |
+| `event` | Active foundation | UUID entities, lifecycle enums, category/creator mappings, validated DTOs, and pageable repositories; public controllers are next |
+| `storage` | Active | MinIO client, private bucket, event-image validation, upload/read/delete, and URL resolution |
 | `registration` | Planned | Capacity, registration lifecycle, cancellation, QR, and check-in |
 | `payment` | Planned scaffold | Provider abstraction and verified payment state |
 | `administration` | Planned | Review, change request, assignment, user, and role operations |
@@ -40,6 +53,11 @@ entities.
 - Backend services must enforce both permission and data scope; frontend route guards are not a
   security boundary.
 - New routes are denied by default unless explicitly public or authenticated.
+- Event-image writes require ADMIN/SUPER_ADMIN. An ADMIN may delete only objects under their own
+  UUID prefix; SUPER_ADMIN may remove any event image.
+- MinIO credentials and Console are private infrastructure. Browser clients never receive storage
+  credentials and the bucket has no anonymous policy.
+- When storage is enabled, Actuator health reports DOWN if MinIO cannot be reached.
 
 ## Concurrency model
 

@@ -18,6 +18,25 @@ services:
       timeout: 5s
       retries: 20
 
+  minio:
+    # Build the last upstream security release; its public registry tag is unavailable.
+    image: event-registration-minio:RELEASE.2025-10-15T17-29-55Z
+    build:
+      context: .
+      dockerfile: docker/minio/Dockerfile
+      args:
+        MINIO_VERSION: RELEASE.2025-10-15T17-29-55Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:?Set STORAGE_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:?Set STORAGE_SECRET_KEY in .env}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - event_registration_minio_data:/data
+
   api:
     image: maven:3.9.16-eclipse-temurin-17
     working_dir: /workspace
@@ -44,6 +63,15 @@ services:
       RATE_LIMIT_GLOBAL_PER_IP: ${RATE_LIMIT_GLOBAL_PER_IP:-300}
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
       RATE_LIMIT_TRUST_FORWARDED_FOR: ${RATE_LIMIT_TRUST_FORWARDED_FOR:-false}
+      STORAGE_ENABLED: ${STORAGE_ENABLED:-true}
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?Set STORAGE_ACCESS_KEY in .env}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?Set STORAGE_SECRET_KEY in .env}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-event-registration}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
+      STORAGE_MAX_IMAGE_SIZE: ${STORAGE_MAX_IMAGE_SIZE:-2MB}
+      STORAGE_MAX_IMAGE_WIDTH: ${STORAGE_MAX_IMAGE_WIDTH:-6000}
+      STORAGE_MAX_IMAGE_HEIGHT: ${STORAGE_MAX_IMAGE_HEIGHT:-6000}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
     ports:
       - "${API_PORT:-8080}:8080"
@@ -53,7 +81,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
 
 volumes:
   event_registration_postgres_data:
+  event_registration_minio_data:
   event_registration_maven_cache:

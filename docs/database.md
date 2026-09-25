@@ -68,6 +68,9 @@ ORDER BY c.table_name, c.ordinal_position;
   deletion.
 - Monetary values use `numeric`, never floating point.
 - JSONB metadata must remain structured and must not contain secrets or payment-card data.
+- `events.image_url` retains its deployed column name for migration compatibility, but new code
+  stores a private MinIO object key there. API DTOs resolve that key to `imageUrl`; image bytes are
+  never stored in PostgreSQL.
 
 ## Migration workflow
 

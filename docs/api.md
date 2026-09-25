@@ -16,9 +16,34 @@ Base path: `/api/v1`
 | GET | `/api/v1/auth/me` | Authenticated | Active |
 | PATCH | `/api/v1/auth/me` | Authenticated | Active |
 | POST | `/api/v1/auth/change-password` | Authenticated | Active |
+| POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
+| DELETE | `/api/v1/event-images/{ownerId}/{fileName}` | Owner ADMIN or SUPER_ADMIN | Active when storage is enabled |
+| GET | `/api/v1/media/event-images/{ownerId}/{fileName}` | Public | Active when storage is enabled |
 
-The source currently contains `/api/events`, but that controller is excluded from runtime and is not
-a supported API contract. New event endpoints will use `/api/v1/events`.
+The legacy `/api/events` controller has been removed. Event entities and repositories now map the
+current UUID schema, but public event controllers remain planned for `/api/v1/events` and
+`/api/v1/event-categories`.
+
+## Event image storage
+
+Upload a cover as `multipart/form-data` using the `file` field. Accepted formats are JPEG, PNG, and
+WebP. The default maximum is 2 MB and 6000 x 6000 pixels. The server detects the format from the
+file bytes rather than trusting its extension or browser-provided Content-Type.
+
+```json
+{
+  "objectKey": "event-images/{ownerUserId}/{imageId}.webp",
+  "imageUrl": "/api/v1/media/event-images/{ownerUserId}/{imageId}.webp",
+  "contentType": "image/webp",
+  "sizeBytes": 245761,
+  "width": 1600,
+  "height": 900
+}
+```
+
+The future create/update Event API accepts `objectKey`, not an arbitrary external URL. The public
+event response exposes only the resolved `imageUrl`. Event images are immutable because their keys
+contain a generated UUID, so public reads use a one-year immutable cache header.
 
 ## Cookies and CSRF
 
