@@ -38,9 +38,7 @@ services:
       - event_registration_minio_data:/data
 
   api:
-    image: maven:3.9.16-eclipse-temurin-17
-    working_dir: /workspace
-    command: ["mvn", "-B", "-ntp", "spring-boot:run"]
+    build: .
     restart: unless-stopped
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-event_registration}
@@ -75,9 +73,6 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
     ports:
       - "${API_PORT:-8080}:8080"
-    volumes:
-      - .:/workspace
-      - event_registration_maven_cache:/root/.m2
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,4 +82,3 @@ services:
 volumes:
   event_registration_postgres_data:
   event_registration_minio_data:
-  event_registration_maven_cache:
