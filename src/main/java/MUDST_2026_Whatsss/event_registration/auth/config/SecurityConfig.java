@@ -118,6 +118,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/event-categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
 
                         .anyRequest().authenticated())

@@ -63,6 +63,20 @@ public class EventImageService {
         objectStorage.delete(objectKey(ownerId, fileName));
     }
 
+    public void requireOwnedObjectKey(String objectKey, AuthenticatedUser user) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return;
+        }
+        if (!objectKey.matches(OBJECT_KEY_REGEX)) {
+            throw new MUDST_2026_Whatsss.event_registration.common.error.ApiException(
+                    MUDST_2026_Whatsss.event_registration.common.error.ErrorCode.INVALID_IMAGE_FILE);
+        }
+        String ownerPrefix = "event-images/" + user.userId() + "/";
+        if (!objectKey.startsWith(ownerPrefix) && !user.hasRole(RoleCodes.SUPER_ADMIN)) {
+            throw new AccessDeniedException("An event image must belong to its owner.");
+        }
+    }
+
     private static String objectKey(UUID ownerId, String fileName) {
         if (ownerId == null || fileName == null || !FILE_NAME_PATTERN.matcher(fileName).matches()) {
             throw new MUDST_2026_Whatsss.event_registration.common.error.ApiException(

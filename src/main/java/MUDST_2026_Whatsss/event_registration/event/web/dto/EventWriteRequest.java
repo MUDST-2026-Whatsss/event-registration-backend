@@ -22,7 +22,7 @@ public record EventWriteRequest(
         @NotBlank @Size(max = 255) String title,
         @Size(max = 500) String summary,
         String description,
-        UUID eventCategoryId,
+        @NotNull UUID eventCategoryId,
         @NotNull EventType eventType,
         @NotNull @DecimalMin("0.00") BigDecimal price,
         @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
