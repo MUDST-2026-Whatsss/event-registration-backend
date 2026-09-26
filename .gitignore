@@ -112,3 +112,8 @@ Unit_test/Result/*.log
 .postman/resources.yaml
 postman/environments/New Environment.environment.yaml
 postman/globals/workspace.globals.yaml
+
+# Cypress
+cypress/screenshots/
+cypress/videos/
+
