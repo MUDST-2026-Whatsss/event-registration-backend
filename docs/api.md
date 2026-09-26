@@ -12,6 +12,7 @@ Base path: `/api/v1`
 | POST | `/api/v1/auth/register` | Public, rate-limited | Active |
 | POST | `/api/v1/auth/login` | Public, rate-limited | Active |
 | POST | `/api/v1/auth/refresh` | Refresh cookie | Active |
+| POST | `/api/v1/auth/select-role` | Authenticated | Active; issues an access token scoped to one assigned role |
 | POST | `/api/v1/auth/logout` | Public/idempotent | Active |
 | GET | `/api/v1/auth/me` | Authenticated | Active |
 | PATCH | `/api/v1/auth/me` | Authenticated | Active |
@@ -45,11 +46,15 @@ Base path: `/api/v1`
 | GET | `/api/v1/admin/users/stats` | SUPER_ADMIN | Active |
 | GET | `/api/v1/admin/users/{userId}` | SUPER_ADMIN | Active |
 | PATCH | `/api/v1/admin/users/{userId}/status` | SUPER_ADMIN | Active; disabling revokes sessions |
-| PUT | `/api/v1/admin/users/{userId}/roles` | SUPER_ADMIN | Active; replaces assigned role set |
+| PUT | `/api/v1/admin/users/{userId}/roles` | SUPER_ADMIN | Active; replaces assigned role set and revokes existing sessions |
 | GET | `/api/v1/admin/roles` | SUPER_ADMIN | Active; includes permissions and usage count |
 | POST | `/api/v1/admin/roles` | SUPER_ADMIN | Active; creates custom role |
-| PATCH | `/api/v1/admin/roles/{roleId}` | SUPER_ADMIN | Active |
-| PUT | `/api/v1/admin/roles/{roleId}/permissions` | SUPER_ADMIN | Active |
+| PATCH | `/api/v1/admin/roles/{roleId}` | SUPER_ADMIN | Active; revokes sessions using the role |
+| PUT | `/api/v1/admin/roles/{roleId}/permissions` | SUPER_ADMIN | Active; revokes sessions using the role |
+
+Multi-role login returns all assigned role codes but no active permissions until the client calls
+`POST /auth/select-role`. Access tokens contain only the selected role and its permissions. The
+client includes the selected role when refreshing so a rotated access token keeps the same scope.
 | GET | `/api/v1/admin/permissions` | SUPER_ADMIN | Active |
 | GET | `/api/v1/admin/audit-logs` | SUPER_ADMIN | Active; immutable paginated history |
 

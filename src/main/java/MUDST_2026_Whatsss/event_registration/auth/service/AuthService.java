@@ -193,12 +193,18 @@ public class AuthService {
         IssuedSession session = sessionService.createSession(user.getUserId(), context);
         Participant participant = participantRepository.findByUserId(user.getUserId()).orElse(null);
 
-        return new LoginResult(UserResponse.from(user, participant), session);
+        return new LoginResult(UserResponse.forActiveRole(user, participant, null), session);
     }
 
     /** Rotates the refresh token and re-reads the user so role changes are picked up. */
     @Transactional
     public LoginResult refresh(String rawRefreshToken, RequestContext context) {
+        return refresh(rawRefreshToken, null, context);
+    }
+
+    @Transactional
+    public LoginResult refresh(
+            String rawRefreshToken, String activeRole, RequestContext context) {
         IssuedSession rotated = sessionService.rotate(rawRefreshToken, context);
         UUID userId = rotated.session().getUserId();
 
@@ -211,19 +217,25 @@ public class AuthService {
         }
 
         Participant participant = participantRepository.findByUserId(userId).orElse(null);
-        return new LoginResult(UserResponse.from(user, participant), rotated);
+        return new LoginResult(scopedUser(user, participant, activeRole), rotated);
     }
 
     @Transactional(readOnly = true)
-    public UserResponse getCurrentUser(UUID userId) {
+    public UserResponse getCurrentUser(UUID userId, String activeRole) {
         AuthUser user = userRepository.findByIdWithRoles(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED));
         Participant participant = participantRepository.findByUserId(userId).orElse(null);
-        return UserResponse.from(user, participant);
+        return scopedUser(user, participant, activeRole);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse selectRole(UUID userId, String role) {
+        return getCurrentUser(userId, role);
     }
 
     @Transactional
-    public UserResponse updateProfile(UUID userId, UpdateProfileRequest request) {
+    public UserResponse updateProfile(
+            UUID userId, String activeRole, UpdateProfileRequest request) {
         AuthUser user = userRepository.findByIdWithRoles(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED));
 
@@ -247,7 +259,16 @@ public class AuthService {
         }
         participant.setUpdatedAt(now);
 
-        return UserResponse.from(user, participantRepository.save(participant));
+        return scopedUser(user, participantRepository.save(participant), activeRole);
+    }
+
+    private static UserResponse scopedUser(
+            AuthUser user, Participant participant, String activeRole) {
+        try {
+            return UserResponse.forActiveRole(user, participant, activeRole);
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(ErrorCode.ACCESS_DENIED, ex.getMessage());
+        }
     }
 
     /**
