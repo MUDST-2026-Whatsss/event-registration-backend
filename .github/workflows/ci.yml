@@ -24,8 +24,21 @@ jobs:
       - name: Build and run unit + integration tests
         run: ./mvnw -B verify
 
-      - name: Build Docker image
-        run: docker build -t event-registration:${{ github.sha }} .
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/event-registration:latest
+            ghcr.io/${{ github.repository_owner }}/event-registration:${{ github.sha }}
 
       - name: Upload test reports
         if: always()
