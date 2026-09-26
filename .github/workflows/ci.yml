@@ -28,6 +28,61 @@ jobs:
       - name: Build and run unit + integration tests
         run: ./mvnw -B verify
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install E2E dependencies
+        run: npm ci
+
+      - name: Prepare local test environment
+        run: |
+          cp .env.example .env
+          sed -i 's/replace-with-a-long-random-local-password/local_db_password_ci/' .env
+          sed -i 's/replace-with-openssl-rand-base64-48/dGhpcy1pcy1hLXJhbmRvbS1qd3Qtc2VjcmV0LWZvci1jaS10ZXN0aW5nLTIwMjY=/' .env
+          sed -i 's/replace-with-minio-access-key/event_minio_admin/' .env
+          sed -i 's/replace-with-a-long-random-minio-secret/event_minio_ci_secret_12345/' .env
+
+      - name: Start services with Docker Compose
+        run: docker compose up -d --build postgres minio api
+
+      - name: Wait for API health
+        run: |
+          timeout 120s bash -c 'until curl -sf http://127.0.0.1:8080/api/health; do echo "Waiting for backend API..."; sleep 3; done'
+
+      - name: Run Backend API Cypress E2E tests
+        run: npm run test:e2e
+
+      - name: Checkout Frontend
+        uses: actions/checkout@v4
+        with:
+          repository: MUDST-2026-Whatsss/event-registration-frontend
+          path: frontend
+
+      - name: Run Frontend Cypress E2E tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test:e2e
+
+      - name: Stop Docker Compose services
+        if: always()
+        run: docker compose down -v
+
+      - name: Upload Cypress artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            cypress/screenshots
+            cypress/videos
+            frontend/cypress/screenshots
+            frontend/cypress/videos
+          if-no-files-found: ignore
+
       - name: Set lowercase image prefix
         run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration" >> $GITHUB_ENV
 

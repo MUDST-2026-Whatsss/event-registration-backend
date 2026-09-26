@@ -1,0 +1,13 @@
+{
+  "name": "event-registration-backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node scripts/cypress-runner.js",
+    "test:e2e:open": "node scripts/cypress-runner.js --open"
+  },
+  "devDependencies": {
+    "cypress": "^14.0.0"
+  }
+}
