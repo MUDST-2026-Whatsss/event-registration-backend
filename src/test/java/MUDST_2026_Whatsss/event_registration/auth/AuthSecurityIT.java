@@ -12,6 +12,7 @@ import MUDST_2026_Whatsss.event_registration.auth.security.JwtService;
 import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
 import MUDST_2026_Whatsss.event_registration.auth.service.AuthService;
 import MUDST_2026_Whatsss.event_registration.auth.service.RequestContext;
+import MUDST_2026_Whatsss.event_registration.auth.service.SessionService;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.LoginRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.RegisterRequest;
 import MUDST_2026_Whatsss.event_registration.common.error.ApiException;
@@ -24,6 +25,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -96,6 +98,37 @@ class AuthSecurityIT extends PostgresIntegrationTest {
                                     && cookie.contains("HttpOnly")
                                     && cookie.contains("SameSite=Lax")));
                 });
+    }
+
+    @Test
+    void successfulLoginReplacesOnlyTheRefreshSessionFromTheSameBrowser() throws Exception {
+        String email = uniqueEmail();
+        register(email);
+
+        MvcResult firstLogin = mockMvc.perform(post("/api/v1/auth/login")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email
+                                + "\",\"password\":\"Password123\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        var firstRefreshCookie = firstLogin.getResponse()
+                .getCookie(AuthCookieService.REFRESH_TOKEN_COOKIE);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .cookie(firstRefreshCookie)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email
+                                + "\",\"password\":\"Password123\"}"))
+                .andExpect(status().isOk());
+
+        UUID userId = userRepository.findByNormalizedEmail(email).orElseThrow().getUserId();
+        List<AuthSession> sessions = sessionRepository.findAllByUserId(userId);
+        assertEquals(2, sessions.size());
+        assertEquals(1, sessions.stream().filter(session -> session.isActive(Instant.now())).count());
+        assertTrue(sessions.stream().anyMatch(session ->
+                SessionService.REASON_REPLACED_BY_LOGIN.equals(session.getRevokedReason())));
     }
 
     @Test

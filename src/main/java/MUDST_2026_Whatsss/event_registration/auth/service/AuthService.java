@@ -145,6 +145,16 @@ public class AuthService {
      */
     @Transactional
     public LoginResult login(LoginRequest request, RequestContext context) {
+        return login(request, context, null);
+    }
+
+    /**
+     * Starts a new session and, after successful credential validation, replaces the refresh
+     * session already stored by this browser. Sessions on other browsers/devices remain active.
+     */
+    @Transactional
+    public LoginResult login(
+            LoginRequest request, RequestContext context, String existingRefreshToken) {
         String normalizedEmail = normalizeEmail(request.email());
 
         enforceLoginRateLimits(normalizedEmail, context);
@@ -190,6 +200,10 @@ public class AuthService {
 
         loginAuditService.recordSuccess(user.getUserId(), normalizedEmail, context);
 
+        if (existingRefreshToken != null && !existingRefreshToken.isBlank()) {
+            sessionService.revokeByRawToken(
+                    existingRefreshToken, SessionService.REASON_REPLACED_BY_LOGIN);
+        }
         IssuedSession session = sessionService.createSession(user.getUserId(), context);
         Participant participant = participantRepository.findByUserId(user.getUserId()).orElse(null);
 

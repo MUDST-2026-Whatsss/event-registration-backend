@@ -33,6 +33,7 @@ public class SessionService {
     public static final String REASON_LOGOUT = "LOGOUT";
     public static final String REASON_REUSE_DETECTED = "REUSE_DETECTED";
     public static final String REASON_PASSWORD_CHANGED = "PASSWORD_CHANGED";
+    public static final String REASON_REPLACED_BY_LOGIN = "REPLACED_BY_LOGIN";
 
     private final AuthSessionRepository sessionRepository;
     private final TokenHasher tokenHasher;
@@ -91,9 +92,15 @@ public class SessionService {
      */
     @Transactional
     public void revokeByRawToken(String rawRefreshToken) {
+        revokeByRawToken(rawRefreshToken, REASON_LOGOUT);
+    }
+
+    /** Replaces only the session represented by this browser's current refresh cookie. */
+    @Transactional
+    public void revokeByRawToken(String rawRefreshToken, String reason) {
         sessionRepository.findByTokenHash(tokenHasher.hash(rawRefreshToken))
                 .ifPresent(session -> {
-                    session.revoke(Instant.now(), REASON_LOGOUT);
+                    session.revoke(Instant.now(), reason);
                     sessionRepository.save(session);
                 });
     }
