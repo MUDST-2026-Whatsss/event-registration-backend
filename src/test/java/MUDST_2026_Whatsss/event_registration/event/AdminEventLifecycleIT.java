@@ -4,6 +4,7 @@ import MUDST_2026_Whatsss.event_registration.PostgresIntegrationTest;
 import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.event.domain.EventStatus;
 import MUDST_2026_Whatsss.event_registration.event.domain.EventType;
+import MUDST_2026_Whatsss.event_registration.event.domain.EventReview;
 import MUDST_2026_Whatsss.event_registration.event.domain.LocationType;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventAdminAssignmentRepository;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventCategoryRepository;
@@ -20,6 +21,7 @@ import MUDST_2026_Whatsss.event_registration.event.web.dto.ReplaceEventAdminsReq
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -138,6 +140,32 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
                 .isNotNull();
         assertThat(reviewRepository.findById(review.getReviewId()).orElseThrow().getReviewedBy())
                 .isNotNull();
+    }
+
+    @Test
+    void rejectedEventAppearsInReviewAndAdminEventFilters() {
+        var created = service.create(validRequest("Rejected event visibility test"), principal);
+        var submitted = service.submit(created.eventId(), created.version(), principal);
+        var review = reviewRepository.findByEvent_EventIdAndDecision(
+                created.eventId(), EventReview.PENDING).orElseThrow();
+
+        var rejected = superAdminService.rejectReview(
+                review.getReviewId(),
+                new ReviewDecisionRequest(submitted.version(), "Test rejection reason"),
+                superAdmin);
+
+        assertThat(rejected.decision()).isEqualTo(EventReview.REJECTED);
+        assertThat(rejected.event().status()).isEqualTo(EventStatus.REJECTED);
+        assertThat(service.stats(principal).rejected()).isEqualTo(1);
+        assertThat(service.list(principal, EventStatus.REJECTED, "", PageRequest.of(0, 20)))
+                .extracting(item -> item.eventId())
+                .contains(created.eventId());
+        assertThat(service.list(superAdmin, EventStatus.REJECTED, "", PageRequest.of(0, 20)))
+                .extracting(item -> item.eventId())
+                .contains(created.eventId());
+        assertThat(superAdminService.reviews(EventReview.REJECTED, PageRequest.of(0, 20)))
+                .extracting(item -> item.reviewId())
+                .contains(review.getReviewId());
     }
 
     @Test
