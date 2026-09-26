@@ -120,6 +120,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/event-categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events/**").permitAll()
 
                         .anyRequest().authenticated())
 
