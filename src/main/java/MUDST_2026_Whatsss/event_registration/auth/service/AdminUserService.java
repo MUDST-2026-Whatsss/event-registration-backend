@@ -43,6 +43,8 @@ import java.util.stream.Collectors;
 public class AdminUserService {
 
     private static final String SESSION_REASON_ACCOUNT_DISABLED = "ACCOUNT_DISABLED";
+    private static final String SESSION_REASON_ROLES_CHANGED = "ROLES_CHANGED";
+    private static final String SESSION_REASON_ROLE_POLICY_CHANGED = "ROLE_POLICY_CHANGED";
 
     private final AuthUserRepository userRepository;
     private final AuthRoleRepository roleRepository;
@@ -156,6 +158,7 @@ public class AdminUserService {
         role.setStatus(newStatus);
         role.setUpdatedAt(Instant.now());
         roleRepository.saveAndFlush(role);
+        revokeSessionsForRole(role.getRoleCode());
         auditRole(actor(principal), "ROLE_UPDATED", role,
                 Map.of("status", newStatus, "scopeType", role.getScopeType()));
         return toRoleResponse(role);
@@ -169,6 +172,7 @@ public class AdminUserService {
         role.setPermissions(permissions);
         role.setUpdatedAt(Instant.now());
         roleRepository.saveAndFlush(role);
+        revokeSessionsForRole(role.getRoleCode());
         auditRole(actor(principal), "ROLE_PERMISSIONS_REPLACED", role,
                 Map.of("permissions", permissions.stream()
                         .map(AuthPermission::getPermissionCode).sorted().toList()));
@@ -233,6 +237,7 @@ public class AdminUserService {
         target.setRoles(new LinkedHashSet<>(roles));
         target.setUpdatedAt(Instant.now());
         userRepository.saveAndFlush(target);
+        sessionService.revokeAllForUser(userId, SESSION_REASON_ROLES_CHANGED);
         AuthUser actor = actor(principal);
         audit(actor, "USER_ROLES_REPLACED", target,
                 Map.of("oldRoles", oldRoles, "newRoles", roleCodes));
@@ -272,6 +277,12 @@ public class AdminUserService {
         auditRepository.save(AuditLog.builder()
                 .actor(actor).action(action).targetType("ROLE").targetId(role.getRoleId())
                 .targetLabel(role.getRoleName()).metadata(metadata).build());
+    }
+
+    private void revokeSessionsForRole(String roleCode) {
+        userRepository.findAllByRoleCode(roleCode).forEach(user ->
+                sessionService.revokeAllForUser(
+                        user.getUserId(), SESSION_REASON_ROLE_POLICY_CHANGED));
     }
 
     private AuthRole lockedRole(UUID roleId) {

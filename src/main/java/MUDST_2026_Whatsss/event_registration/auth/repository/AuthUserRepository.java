@@ -93,4 +93,7 @@ public interface AuthUserRepository extends JpaRepository<AuthUser, UUID> {
 
     @Query("select count(distinct u.userId) from AuthUser u join u.roles r where r.roleCode = :roleCode")
     long countByRoleCode(@Param("roleCode") String roleCode);
+
+    @Query("select distinct u from AuthUser u join u.roles r where r.roleCode = :roleCode")
+    List<AuthUser> findAllByRoleCode(@Param("roleCode") String roleCode);
 }

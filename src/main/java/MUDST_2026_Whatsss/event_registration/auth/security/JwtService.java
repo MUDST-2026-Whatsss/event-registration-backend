@@ -21,8 +21,9 @@ import java.util.UUID;
 /**
  * Issues and verifies the HS256 access token.
  *
- * <p>The token carries the user id as subject plus the primary role, all role codes and all
- * permission codes, so an authenticated request needs no database round trip to be authorized.
+ * <p>The token carries the user id as subject plus one explicitly selected role and only that
+ * role's permission codes, so an authenticated request needs no database round trip to be
+ * authorized and a multi-role account cannot accidentally exercise every role at once.
  * The trade-off is that the claims are a snapshot: a role revoked mid-token stays effective until
  * the token expires. Anything that must take effect immediately has to be checked against the
  * database in the service layer rather than read from the JWT.
@@ -73,18 +74,19 @@ public class JwtService {
         Instant now = Instant.now();
         Instant expiry = now.plus(properties.getAccessTokenTtl());
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .issuer(properties.getJwtIssuer())
                 .subject(userId.toString())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiry))
                 .id(UUID.randomUUID().toString())
                 .claim(CLAIM_EMAIL, email)
-                .claim(CLAIM_ROLE, primaryRole)
                 .claim(CLAIM_ROLES, roles)
-                .claim(CLAIM_PERMISSIONS, permissions)
-                .signWith(signingKey)
-                .compact();
+                .claim(CLAIM_PERMISSIONS, permissions);
+        if (primaryRole != null) {
+            builder.claim(CLAIM_ROLE, primaryRole);
+        }
+        return builder.signWith(signingKey).compact();
     }
 
     /**

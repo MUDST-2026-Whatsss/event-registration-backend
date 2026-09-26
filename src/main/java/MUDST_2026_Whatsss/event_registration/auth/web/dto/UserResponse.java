@@ -7,6 +7,7 @@ import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -35,19 +36,34 @@ public record UserResponse(
         Instant emailVerifiedAt) {
 
     public static UserResponse from(AuthUser user, Participant participant) {
-        List<String> roleCodes = user.getRoles().stream()
-                .filter(role -> role.isActive())
-                .map(role -> role.getRoleCode())
-                .sorted()
-                .toList();
+        return forActiveRole(user, participant, RoleCodes.primaryRole(activeRoleCodes(user)));
+    }
 
-        List<String> permissionCodes = user.getRoles().stream()
-                .filter(role -> role.isActive())
-                .flatMap(role -> role.getPermissions().stream())
-                .map(permission -> permission.getPermissionCode())
-                .distinct()
-                .sorted(Comparator.naturalOrder())
-                .toList();
+    /**
+     * Builds the authentication payload for one active role. When {@code requestedRole} is null,
+     * a single-role account is selected automatically while a multi-role account stays pending
+     * until the user explicitly chooses a role.
+     */
+    public static UserResponse forActiveRole(
+            AuthUser user, Participant participant, String requestedRole) {
+        List<String> roleCodes = activeRoleCodes(user);
+        String activeRole = requestedRole == null || requestedRole.isBlank()
+                ? (roleCodes.size() == 1 ? roleCodes.get(0) : null)
+                : requestedRole.trim().toUpperCase(Locale.ROOT);
+
+        if (activeRole != null && !roleCodes.contains(activeRole)) {
+            throw new IllegalArgumentException("Role is not assigned to this account.");
+        }
+
+        List<String> permissionCodes = activeRole == null
+                ? List.of()
+                : user.getRoles().stream()
+                        .filter(role -> role.isActive() && activeRole.equals(role.getRoleCode()))
+                        .flatMap(role -> role.getPermissions().stream())
+                        .map(permission -> permission.getPermissionCode())
+                        .distinct()
+                        .sorted(Comparator.naturalOrder())
+                        .toList();
 
         String firstName = participant == null ? null : participant.getFirstName();
         String lastName = participant == null ? null : participant.getLastName();
@@ -60,11 +76,20 @@ public record UserResponse(
                 lastName,
                 displayName(firstName, lastName, user.getEmail()),
                 participant == null ? null : participant.getPhoneNumber(),
-                RoleCodes.primaryRole(roleCodes),
+                activeRole,
                 roleCodes,
                 permissionCodes,
                 user.getStatus().name(),
                 user.getEmailVerifiedAt());
+    }
+
+    private static List<String> activeRoleCodes(AuthUser user) {
+        List<String> roleCodes = user.getRoles().stream()
+                .filter(role -> role.isActive())
+                .map(role -> role.getRoleCode())
+                .sorted()
+                .toList();
+        return roleCodes;
     }
 
     /** Falls back to the email local part so the UI always has something to show. */

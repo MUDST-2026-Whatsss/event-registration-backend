@@ -11,6 +11,7 @@ import MUDST_2026_Whatsss.event_registration.auth.web.dto.ChangePasswordRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.LoginRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.MessageResponse;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.RegisterRequest;
+import MUDST_2026_Whatsss.event_registration.auth.web.dto.SelectRoleRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.UpdateProfileRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.UserResponse;
 import MUDST_2026_Whatsss.event_registration.common.error.ApiException;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * The authentication endpoints described in AUTH_API.md.
@@ -88,12 +90,24 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(HttpServletRequest httpRequest) {
+    public ResponseEntity<AuthResponse> refresh(
+            @Valid @RequestBody(required = false) SelectRoleRequest request,
+            HttpServletRequest httpRequest) {
         String refreshToken = cookieService.readRefreshToken(httpRequest)
                 .orElseThrow(() -> new ApiException(ErrorCode.INVALID_REFRESH_TOKEN));
 
-        AuthService.LoginResult result = authService.refresh(refreshToken, contextOf(httpRequest));
+        String activeRole = request == null ? null : request.role();
+        AuthService.LoginResult result = authService.refresh(
+                refreshToken, activeRole, contextOf(httpRequest));
         return sessionResponse(result);
+    }
+
+    @PostMapping("/select-role")
+    public ResponseEntity<AuthResponse> selectRole(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody SelectRoleRequest request) {
+        UserResponse user = authService.selectRole(requirePrincipal(principal).userId(), request.role());
+        return accessResponse(user);
     }
 
     /**
@@ -117,13 +131,15 @@ public class AuthController {
 
     @GetMapping("/me")
     public UserResponse me(@AuthenticationPrincipal AuthenticatedUser principal) {
-        return authService.getCurrentUser(requirePrincipal(principal).userId());
+        AuthenticatedUser authenticated = requirePrincipal(principal);
+        return authService.getCurrentUser(authenticated.userId(), authenticated.primaryRole());
     }
 
     @PatchMapping("/me")
     public UserResponse updateMe(@AuthenticationPrincipal AuthenticatedUser principal,
                                  @Valid @RequestBody UpdateProfileRequest request) {
-        return authService.updateProfile(requirePrincipal(principal).userId(), request);
+        AuthenticatedUser authenticated = requirePrincipal(principal);
+        return authService.updateProfile(authenticated.userId(), authenticated.primaryRole(), request);
     }
 
     /**
@@ -148,15 +164,24 @@ public class AuthController {
 
     private ResponseEntity<AuthResponse> sessionResponse(AuthService.LoginResult result) {
         UserResponse user = result.user();
+        ResponseEntity<AuthResponse> accessResponse = accessResponse(user);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.putAll(accessResponse.getHeaders());
+        cookieService.addCookie(headers, cookieService.refreshTokenCookie(result.session().rawRefreshToken()));
+
+        return ResponseEntity.ok().headers(headers).body(new AuthResponse(user));
+    }
+
+    private ResponseEntity<AuthResponse> accessResponse(UserResponse user) {
+        List<String> activeRoles = user.role() == null ? List.of() : List.of(user.role());
         String accessToken = jwtService.issueAccessToken(
-                user.userId(), user.email(), user.role(), user.roles(), user.permissions());
+                user.userId(), user.email(), user.role(), activeRoles, user.permissions());
 
         ResponseCookie access = cookieService.accessTokenCookie(accessToken);
-        ResponseCookie refresh = cookieService.refreshTokenCookie(result.session().rawRefreshToken());
 
         HttpHeaders headers = new HttpHeaders();
         cookieService.addCookie(headers, access);
-        cookieService.addCookie(headers, refresh);
 
         return ResponseEntity.ok().headers(headers).body(new AuthResponse(user));
     }
