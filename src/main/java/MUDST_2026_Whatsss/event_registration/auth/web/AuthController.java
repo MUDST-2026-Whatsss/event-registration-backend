@@ -85,7 +85,9 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
                                               HttpServletRequest httpRequest) {
-        AuthService.LoginResult result = authService.login(request, contextOf(httpRequest));
+        String existingRefreshToken = cookieService.readRefreshToken(httpRequest).orElse(null);
+        AuthService.LoginResult result = authService.login(
+                request, contextOf(httpRequest), existingRefreshToken);
         return sessionResponse(result);
     }
 
