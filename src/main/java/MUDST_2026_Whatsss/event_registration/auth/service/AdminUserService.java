@@ -142,7 +142,10 @@ public class AdminUserService {
             UUID roleId, UpdateRoleRequest request, AuthenticatedUser principal) {
         validateRoleFields(request.scopeType(), request.status());
         AuthRole role = lockedRole(roleId);
+        String oldScopeType = role.getScopeType();
+        String oldStatus = role.getStatus();
         String newStatus = request.status().trim().toUpperCase(Locale.ROOT);
+        String newScopeType = request.scopeType().trim().toUpperCase(Locale.ROOT);
         if (role.isSystem() && !AuthRole.STATUS_ACTIVE.equals(newStatus)) {
             throw new ApiException(ErrorCode.INVALID_USER_STATE,
                     "System roles cannot be disabled.");
@@ -154,13 +157,17 @@ public class AdminUserService {
         }
         role.setRoleName(request.name().trim());
         role.setDescription(blankToNull(request.description()));
-        role.setScopeType(request.scopeType().trim().toUpperCase(Locale.ROOT));
+        role.setScopeType(newScopeType);
         role.setStatus(newStatus);
         role.setUpdatedAt(Instant.now());
         roleRepository.saveAndFlush(role);
-        revokeSessionsForRole(role.getRoleCode());
+        // Display-name and description edits are cosmetic. Only authorization-relevant changes
+        // invalidate active sessions for accounts that use this role.
+        if (!oldScopeType.equals(newScopeType) || !oldStatus.equals(newStatus)) {
+            revokeSessionsForRole(role.getRoleCode());
+        }
         auditRole(actor(principal), "ROLE_UPDATED", role,
-                Map.of("status", newStatus, "scopeType", role.getScopeType()));
+                Map.of("status", newStatus, "scopeType", newScopeType));
         return toRoleResponse(role);
     }
 

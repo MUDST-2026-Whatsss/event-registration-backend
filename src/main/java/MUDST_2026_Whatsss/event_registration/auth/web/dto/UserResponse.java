@@ -6,9 +6,12 @@ import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The {@code user} object returned by login, refresh and {@code /me}.
@@ -30,7 +33,9 @@ public record UserResponse(
         String name,
         String phoneNumber,
         String role,
+        String roleName,
         List<String> roles,
+        Map<String, String> roleNames,
         List<String> permissions,
         String status,
         Instant emailVerifiedAt) {
@@ -46,7 +51,8 @@ public record UserResponse(
      */
     public static UserResponse forActiveRole(
             AuthUser user, Participant participant, String requestedRole) {
-        List<String> roleCodes = activeRoleCodes(user);
+        Map<String, String> roleNames = activeRoleNames(user);
+        List<String> roleCodes = List.copyOf(roleNames.keySet());
         String activeRole = requestedRole == null || requestedRole.isBlank()
                 ? (roleCodes.size() == 1 ? roleCodes.get(0) : null)
                 : requestedRole.trim().toUpperCase(Locale.ROOT);
@@ -77,19 +83,31 @@ public record UserResponse(
                 displayName(firstName, lastName, user.getEmail()),
                 participant == null ? null : participant.getPhoneNumber(),
                 activeRole,
+                activeRole == null ? null : roleNames.get(activeRole),
                 roleCodes,
+                roleNames,
                 permissionCodes,
                 user.getStatus().name(),
                 user.getEmailVerifiedAt());
     }
 
     private static List<String> activeRoleCodes(AuthUser user) {
-        List<String> roleCodes = user.getRoles().stream()
+        return List.copyOf(activeRoleNames(user).keySet());
+    }
+
+    /**
+     * Keeps the stable authorization code and its database-backed display name together. The map
+     * is additive to the existing {@code roles} field so older clients remain compatible.
+     */
+    private static Map<String, String> activeRoleNames(AuthUser user) {
+        return user.getRoles().stream()
                 .filter(role -> role.isActive())
-                .map(role -> role.getRoleCode())
-                .sorted()
-                .toList();
-        return roleCodes;
+                .sorted(Comparator.comparing(role -> role.getRoleCode()))
+                .collect(Collectors.toMap(
+                        role -> role.getRoleCode(),
+                        role -> role.getRoleName(),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new));
     }
 
     /** Falls back to the email local part so the UI always has something to show. */

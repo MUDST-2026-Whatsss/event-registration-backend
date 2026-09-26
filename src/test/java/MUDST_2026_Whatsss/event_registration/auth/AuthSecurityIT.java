@@ -115,7 +115,9 @@ class AuthSecurityIT extends PostgresIntegrationTest {
                                 + "\",\"password\":\"Password123\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user.role").doesNotExist())
+                .andExpect(jsonPath("$.user.roleName").doesNotExist())
                 .andExpect(jsonPath("$.user.roles.length()").value(2))
+                .andExpect(jsonPath("$.user.roleNames.ADMIN").value("Administrator"))
                 .andReturn();
 
         var pendingCookie = login.getResponse().getCookie(AuthCookieService.ACCESS_TOKEN_COOKIE);
@@ -131,6 +133,7 @@ class AuthSecurityIT extends PostgresIntegrationTest {
                         .content("{\"role\":\"ADMIN\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user.role").value("ADMIN"))
+                .andExpect(jsonPath("$.user.roleName").value("Administrator"))
                 .andExpect(jsonPath("$.user.roles.length()").value(2))
                 .andReturn();
 
