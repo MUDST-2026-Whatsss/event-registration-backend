@@ -109,3 +109,6 @@ Unit_test/Result/*.log
 # Database backups may contain accounts, sessions, and personal data.
 /backups/
 
+.postman/resources.yaml
+postman/environments/New Environment.environment.yaml
+postman/globals/workspace.globals.yaml
