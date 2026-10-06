@@ -1,7 +1,8 @@
 # Docker setup, database backup, and restore
 
-คู่มือนี้ใช้สำหรับเริ่ม backend หลัง clone repository ใหม่ รวมถึงสำรองฐานข้อมูลจาก
-managed PostgreSQL และนำข้อมูลกลับมาใช้กับ PostgreSQL ใน Docker เครื่อง local
+คู่มือนี้ใช้สำหรับเริ่มระบบ frontend, API, PostgreSQL และ MinIO หลัง clone repository ใหม่
+รวมถึงสำรองฐานข้อมูลจาก managed PostgreSQL และนำข้อมูลกลับมาใช้กับ PostgreSQL ใน Docker
+เครื่อง local
 
 | ระบบปฏิบัติการ | Terminal | ขั้นตอนที่ใช้ |
 | --- | --- | --- |
@@ -169,25 +170,33 @@ Migration ทุกแถวต้องเป็น `success = true` และ�
 
 ### G. เปิด frontend
 
-เปิด terminal ใหม่:
+จากโฟลเดอร์ backend ให้ build และเปิด frontend container:
 
 ```bash
-cd event-registration-workspace/event-registration-frontend
+docker compose --env-file .env.local up -d --build frontend
+docker compose --env-file .env.local ps
+```
+
+Compose คาดว่า repository `event-registration-frontend` อยู่ข้าง repository backend ตามขั้นตอน
+Clone ด้านบน เปิด `http://localhost:5173` แล้วทดสอบ register/login Nginx ใน frontend container
+จะ proxy `/api` ไป service `api` ภายใน Docker network
+
+หากกำลังแก้ frontend และต้องการ Vite hot reload ให้หยุดเฉพาะ frontend container แล้วรัน dev server:
+
+```bash
+docker compose --env-file .env.local stop frontend
+cd ../event-registration-frontend
 cp .env.example .env
 npm ci
 npm run dev
 ```
-
-หาก terminal อยู่ใน backend ให้ใช้ `cd ../event-registration-frontend` แทน เปิด
-`http://localhost:5173` แล้วทดสอบ register/login Frontend จะ proxy `/api` ไป backend ที่
-`http://localhost:8080`
 
 User ที่อยู่ใน dump ใช้ password เดิม หากไม่มี account ที่ทราบ password สามารถสมัครใหม่ผ่าน
 `/register`; local profile จะ activate account ใหม่ให้อัตโนมัติ
 
 ### H. Checklist ระบบพร้อมใช้งาน
 
-- `docker compose --env-file .env.local ps` แสดง PostgreSQL, MinIO และ API ทำงานอยู่
+- `docker compose --env-file .env.local ps` แสดง PostgreSQL, MinIO, API และ frontend ทำงานอยู่
 - PostgreSQL เป็น `healthy`
 - API health ทั้งสอง URL ตอบสำเร็จ
 - Flyway history ไม่มี migration ที่ล้มเหลว
@@ -360,17 +369,16 @@ docker compose --env-file .env.local exec -T postgres `
 
 ### G. เปิด frontend
 
-เปิด PowerShell อีกหน้าต่าง:
+จากโฟลเดอร์ backend:
 
 ```powershell
-Set-Location path\to\event-registration-workspace\event-registration-frontend
-Copy-Item .env.example .env
-npm.cmd ci
-npm.cmd run dev
+docker compose --env-file .env.local up -d --build frontend
+docker compose --env-file .env.local ps
 ```
 
-เปิด `http://localhost:5173` แล้วทดสอบ register/login ใช้ `npm.cmd` เพื่อหลีกเลี่ยงปัญหา
-PowerShell execution policy ที่อาจ block `npm.ps1`
+เปิด `http://localhost:5173` แล้วทดสอบ register/login หากต้องการ Vite hot reload ให้หยุด
+frontend container แล้วเปิด PowerShell อีกหน้าต่างเพื่อรัน `npm.cmd ci` และ `npm.cmd run dev`
+จาก repository frontend
 
 ### H. คำสั่งใช้งานประจำบน Windows
 
@@ -380,7 +388,7 @@ docker compose --env-file .env.local up -d
 
 # ดูสถานะและ log
 docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs --tail=200 api postgres minio
+docker compose --env-file .env.local logs --tail=200 frontend api postgres minio
 
 # หยุด container โดยเก็บข้อมูลใน volume
 docker compose --env-file .env.local down
@@ -393,9 +401,9 @@ docker compose --env-file .env.local down
 
 - Git
 - Docker Desktop พร้อม Docker Compose v2
-- Node.js `^22.18.0` หรือ `>=24.12.0` และ npm สำหรับ frontend
+- Node.js `^22.18.0` หรือ `>=24.12.0` และ npm เฉพาะเมื่อต้องพัฒนา frontend ด้วย Vite
 - macOS ใช้ `zsh`/`bash`; Windows ใช้ PowerShell 5.1+ หรือ PowerShell 7
-- พอร์ตว่างสำหรับ API, PostgreSQL และ MinIO (ค่าเริ่มต้น `8080`, `5432`, `9000`, `9001`)
+- พอร์ตว่างสำหรับ frontend, API, PostgreSQL และ MinIO (ค่าเริ่มต้น `5173`, `8080`, `5432`, `9000`, `9001`)
 - Internet สำหรับดาวน์โหลด image/dependency ในการ build ครั้งแรก
 
 ตรวจสอบเครื่องมือ:
@@ -429,8 +437,8 @@ cp .env.example .env.local
 
 | ไฟล์ | ใช้กับ | Compose file |
 | --- | --- | --- |
-| `.env.local` | PostgreSQL + MinIO + API ใน Docker เครื่อง local | `docker-compose.yml` |
-| `.env.server` | API/MinIO ในเครื่อง local แต่ต่อ managed PostgreSQL | `docker-compose.server.yml` |
+| `.env.local` | Frontend + API + PostgreSQL + MinIO ใน Docker เครื่อง local | `docker-compose.yml` |
+| `.env.server` | Frontend + API/MinIO ในเครื่อง local แต่ต่อ managed PostgreSQL | `docker-compose.server.yml` |
 
 `.env.server` ต้องมี `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SCHEMA` และค่าระบบอื่นจาก
 `.env.example` แต่ไม่ต้องมี `POSTGRES_*` เพราะ Compose ชุดนี้ไม่สร้าง PostgreSQL local
@@ -534,18 +542,16 @@ Console ยังไม่มี bucket ทันทีหลังเริ่�
 
 ### 3.7 เปิด frontend และสร้าง user แรก
 
-เปิด terminal ใหม่ โดยสมมติว่า frontend อยู่ข้าง backend ในโฟลเดอร์เดียวกัน:
+จากโฟลเดอร์ backend โดยสมมติว่า frontend อยู่ข้าง backend ในโฟลเดอร์เดียวกัน:
 
 ```bash
-cd ../event-registration-frontend
-cp .env.example .env
-npm ci
-npm run dev
+docker compose --env-file .env.local up -d --build frontend
+docker compose --env-file .env.local ps
 ```
 
 เปิด `http://localhost:5173/register` แล้วสมัคร user จากหน้าเว็บ จากนั้น login ได้ทันที เพราะ
 `SPRING_PROFILES_ACTIVE=local` เปิด auto-verification เฉพาะการพัฒนา Frontend ส่ง `/api`
-ผ่าน Vite proxy ไป `http://localhost:8080` จึงไม่ต้องใส่ token หรือ cookie ลง JavaScript เอง
+ผ่าน Nginx ไป service `api` จึงไม่ต้องใส่ token หรือ cookie ลง JavaScript เอง
 
 ตรวจว่าข้อมูลถูกบันทึกจริงโดยไม่แสดง password hash:
 
@@ -573,25 +579,26 @@ docker compose --env-file .env.local up -d
 ดู log หรือหยุดระบบ:
 
 ```bash
-docker compose --env-file .env.local logs --tail=200 api postgres minio
+docker compose --env-file .env.local logs --tail=200 frontend api postgres minio
 docker compose --env-file .env.local down
 ```
 
 `docker compose down` ไม่ลบข้อมูลใน named volumes แต่ `docker compose down -v` จะลบทั้ง
 PostgreSQL และ MinIO local อย่างถาวร จึงต้องมี backup ที่ตรวจสอบแล้วก่อนใช้ `-v`
 
-## 4. รัน API local โดยต่อฐานข้อมูลบน server
+## 4. รันระบบ local โดยต่อฐานข้อมูลบน server
 
 ใช้โหมดนี้เฉพาะเมื่อตั้งใจทดสอบกับฐานข้อมูลร่วม ห้ามรัน integration test, reset script หรือ
 คำสั่งแก้ข้อมูลทดลองกับ production/shared database
 
 ```bash
 docker compose --env-file .env.server -f docker-compose.server.yml config --quiet
-docker compose --env-file .env.server -f docker-compose.server.yml up -d --build minio api
+docker compose --env-file .env.server -f docker-compose.server.yml up -d --build minio api frontend
 docker compose --env-file .env.server -f docker-compose.server.yml logs -f api
 ```
 
 สามคำสั่งนี้ใช้ได้ทั้ง macOS/Linux shell และ Windows PowerShell
+Frontend เปิดที่ `http://localhost:5173` โดยเปลี่ยน host port ได้ผ่าน `FRONTEND_PORT`
 
 ## 5. สำรอง managed PostgreSQL ลงเครื่อง
 
