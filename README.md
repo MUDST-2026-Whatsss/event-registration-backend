@@ -44,12 +44,17 @@ Never commit `.env`. Production values belong in deployment secrets.
 
 ## Run with local PostgreSQL
 
-Use the `POSTGRES_*` values from `.env.example`, then run:
+Use the `POSTGRES_*` values from `.env.example`, clone the frontend repository beside this
+repository, then run:
 
 ```bash
 docker compose up -d
-docker compose logs -f api
+docker compose logs -f frontend api
 ```
+
+Open the frontend at `http://localhost:5173`. It serves the production Vue build through Nginx and
+proxies same-origin `/api` requests to the API container. Set `FRONTEND_PORT` when port 5173 is not
+available.
 
 MinIO API and Console bind to loopback only:
 
@@ -60,12 +65,12 @@ The bucket is created lazily by the API on the first upload. Image objects persi
 `event_registration_minio_data` volume when containers are recreated. Never delete that volume
 without a verified backup.
 
-## Run the local API against managed PostgreSQL
+## Run the local stack against managed PostgreSQL
 
 Set `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, and `DB_SCHEMA=public` in `.env`, then run:
 
 ```bash
-docker compose -f docker-compose.server.yml up -d --build minio api
+docker compose -f docker-compose.server.yml up -d --build minio api frontend
 docker compose -f docker-compose.server.yml logs -f api
 ```
 

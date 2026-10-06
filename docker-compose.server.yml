@@ -67,6 +67,18 @@ services:
       minio:
         condition: service_started
 
+  frontend:
+    image: event-registration-frontend:local
+    build:
+      context: ../event-registration-frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   event_registration_minio_data:
   event_registration_maven_cache:
