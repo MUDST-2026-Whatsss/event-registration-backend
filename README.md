@@ -14,9 +14,9 @@ Available at runtime:
 - Current UUID event/category persistence model with pageable repository and validation foundation
 - Private MinIO object storage with validated event-image upload, public read proxy, and owner-scoped deletion
 
-The event persistence foundation now validates against the Flyway v8 schema. Public catalogue and
-administrative event controllers are the next API slices; event and registration HTTP endpoints are
-not active yet. See the workspace `PLAN.md` and `docs/api.md`.
+Administrative event lifecycle, review, audit, and category APIs are active. Public event catalogue
+and participant registration endpoints are still planned. See `docs/api.md` for the current API
+contract.
 
 ## Requirements
 
@@ -76,6 +76,29 @@ docker compose -f docker-compose.server.yml logs -f api
 
 This mode does not depend on the local PostgreSQL container. Do not run destructive tests or test
 fixtures against a shared/production database.
+
+## Deploy to Kubernetes
+
+The API manifests are in `k8s/`. The cluster must provide PostgreSQL and MinIO endpoints reachable
+from the `event-registration` namespace. Create the runtime Secret before applying the manifests;
+keep its source file outside Git and supply these keys: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
+`JWT_SECRET`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`. The image is published to GHCR; for a
+private package, configure an `imagePullSecret` on the deployment service account. Update
+`CORS_ALLOWED_ORIGINS` and `STORAGE_ENDPOINT` in `k8s/configmap.yaml` for the target environment.
+
+```bash
+kubectl create namespace event-registration
+kubectl -n event-registration create secret generic event-registration-api \
+  --from-env-file=/secure/path/event-registration-k8s.env
+kubectl apply -f k8s/
+kubectl -n event-registration rollout status deployment/event-registration-api
+```
+
+GitHub Actions publishes the commit-tagged image on pushes to `main`. To enable automated rollout,
+add the repository variable `K8S_DEPLOY_ENABLED=true` and the `KUBE_CONFIG` Actions secret. The
+workflow applies the manifests, switches the deployment to the tested commit image, and waits for
+the rollout. The kubeconfig principal needs permission to manage the namespace resources and update
+the API Deployment.
 
 The Compose files build the pinned final MinIO community security release from its upstream Go tag
 because that release is not available as a public registry image. The first build takes longer;

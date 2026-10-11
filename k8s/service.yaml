@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-registration-api
+  namespace: event-registration
+  labels:
+    app.kubernetes.io/name: event-registration-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: event-registration-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

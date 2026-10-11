@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-registration-api
+  namespace: event-registration
+data:
+  DB_SCHEMA: public
+  JWT_ISSUER: event-registration
+  ACCESS_TOKEN_TTL: 15m
+  REFRESH_TOKEN_TTL: 7d
+  COOKIE_SECURE: "true"
+  COOKIE_SAME_SITE: Lax
+  CORS_ALLOWED_ORIGINS: https://events.example.com
+  LOCKOUT_MAX_ATTEMPTS: "5"
+  LOCKOUT_DURATION: 15m
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_TRUST_FORWARDED_FOR: "false"
+  STORAGE_ENABLED: "true"
+  STORAGE_ENDPOINT: http://minio.event-registration.svc.cluster.local:9000
+  STORAGE_BUCKET: event-registration
+  STORAGE_MAX_IMAGE_SIZE: 2MB
+  STORAGE_MAX_IMAGE_WIDTH: "6000"
+  STORAGE_MAX_IMAGE_HEIGHT: "6000"
+  MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE: readinessState,db,objectStorage
