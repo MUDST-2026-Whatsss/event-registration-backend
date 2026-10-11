@@ -42,7 +42,7 @@ class EventMapperTest {
                 .timezone("Asia/Bangkok")
                 .build();
 
-        var response = mapper.toDetailResponse(event);
+        var response = mapper.toDetailResponse(event, 0);
 
         assertThat(response.eventId()).isEqualTo(eventId);
         assertThat(response.category().code()).isEqualTo("TECHNOLOGY");

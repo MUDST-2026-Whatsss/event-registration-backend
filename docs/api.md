@@ -18,6 +18,12 @@ Base path: `/api/v1`
 | PATCH | `/api/v1/auth/me` | Authenticated | Active |
 | POST | `/api/v1/auth/change-password` | Authenticated | Active |
 | GET | `/api/v1/event-categories` | Public | Active |
+| GET | `/api/v1/events` | Public | Active; all published events, soonest first, with seat availability (clients split upcoming/past by date) |
+| GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
+| POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events only, capacity enforced under a row lock |
+| GET | `/api/v1/registrations` | `REGISTRATION_READ_SELF` | Active; caller's registrations, newest first |
+| GET | `/api/v1/registrations/{registrationId}` | `REGISTRATION_READ_SELF` | Active; caller's own registration only |
+| POST | `/api/v1/registrations/{registrationId}/cancel` | `REGISTRATION_CANCEL_SELF` | Active; within the event's cancellation policy |
 | GET | `/api/v1/admin/events` | Assigned ADMIN or SUPER_ADMIN | Active, paginated |
 | GET | `/api/v1/admin/events/stats` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events` | `EVENT_CREATE` or SUPER_ADMIN | Active |
@@ -25,7 +31,9 @@ Base path: `/api/v1`
 | PATCH | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED |
 | POST | `/api/v1/admin/events/{eventId}/submit?version=` | `EVENT_UPDATE`, assigned scope | Active |
 | POST | `/api/v1/admin/events/{eventId}/withdraw?version=` | `EVENT_UPDATE`, assigned scope | Active |
-| POST | `/api/v1/admin/events/{eventId}/cancel` | `EVENT_CANCEL`, assigned scope | Active |
+| POST | `/api/v1/admin/events/{eventId}/cancel` | `EVENT_CANCEL`, assigned scope | Active; also cancels every active registration |
+| DELETE | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED; published events are cancelled instead |
+| GET | `/api/v1/admin/events/{eventId}/registrations` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; paginated participant list, `query` searches name/email/number |
 | GET | `/api/v1/admin/events/{eventId}/change-requests` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events/{eventId}/change-requests?version=` | `EVENT_UPDATE`, published event | Active |
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
@@ -58,8 +66,33 @@ client includes the selected role when refreshing so a rotated access token keep
 | GET | `/api/v1/admin/permissions` | SUPER_ADMIN | Active |
 | GET | `/api/v1/admin/audit-logs` | SUPER_ADMIN | Active; immutable paginated history |
 
-The legacy `/api/events` controller has been removed. Public event list/detail controllers remain
-planned for `/api/v1/events`; event categories and the assigned Admin lifecycle are active.
+The legacy `/api/events` controller has been removed.
+
+## Registrations
+
+Registration requires a signed-in account holding `REGISTRATION_CREATE_SELF` (the USER role);
+guests receive HTTP 401. Only the consent flag is required; blank attendee fields fall back to the
+caller's profile and account email.
+
+```json
+POST /api/v1/events/{eventId}/registrations
+{ "consentAccepted": true, "attendeeName": "Optional", "attendeeEmail": "optional@example.com", "attendeePhone": "Optional" }
+```
+
+| Error code | HTTP | When |
+| --- | --- | --- |
+| `EVENT_NOT_FOUND` | 404 | Event is missing or not published |
+| `REGISTRATION_CLOSED` | 409 | Outside `registrationStartAt` to `registrationEndAt` |
+| `PAID_REGISTRATION_UNAVAILABLE` | 409 | Paid events wait for the payment integration |
+| `ALREADY_REGISTERED` | 409 | Caller already holds an active registration for the event |
+| `EVENT_FULL` | 409 | Active registrations have reached `maximumParticipants` |
+| `REGISTRATION_NOT_CANCELLABLE` | 409 | Cancellation disabled, deadline passed, or event started |
+| `REGISTRATION_NOT_FOUND` | 404 | Unknown ID or another participant's registration |
+
+Capacity counts `PENDING_PAYMENT`, `CONFIRMED`, and `CHECKED_IN`. Public event responses include
+`maximumParticipants`, `remainingSeats` (null when the event hides the count), and `full`.
+Registering again after a cancellation reactivates the same row and registration number. Every
+status change is appended to `registration_status_history`.
 
 ## Event image storage
 
@@ -114,8 +147,8 @@ Do not branch frontend logic on human-readable messages.
 - Public catalogue: categories, event search/list, event detail
 - Admin event lifecycle is active; dashboard-specific trends and registration totals remain planned
 - Super-admin event governance, users, roles, permissions, and audit history are active
-- Registrations: create, list mine, detail, cancel, QR
-- Event operations: participant list, admin cancellation, check-in, CSV export
+- Registrations: QR ticket token and create-registration idempotency key
+- Event operations: check-in and CSV export
 - Administration still planned: invitations and aggregate dashboard endpoints
 - Auth completion: forgot/reset password, email verification, invitation acceptance
 - Payment: disabled provider abstraction first, verified provider/webhook integration later

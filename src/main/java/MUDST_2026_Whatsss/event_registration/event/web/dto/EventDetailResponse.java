@@ -33,5 +33,8 @@ public record EventDetailResponse(
         String contactEmail,
         String eligibility,
         boolean allowCancellation,
-        boolean showRemainingSeats) {
+        boolean showRemainingSeats,
+        int maximumParticipants,
+        Integer remainingSeats,
+        boolean full) {
 }

@@ -1,18 +1,21 @@
 package MUDST_2026_Whatsss.event_registration.event.web;
 
+import MUDST_2026_Whatsss.event_registration.event.domain.Event;
 import MUDST_2026_Whatsss.event_registration.event.domain.EventStatus;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
 import MUDST_2026_Whatsss.event_registration.event.service.EventMapper;
 import MUDST_2026_Whatsss.event_registration.event.service.EventNotFoundException;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventDetailResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventSummaryResponse;
-import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /** Public read-only event endpoints — no authentication required. */
 @RestController
@@ -27,18 +30,28 @@ public class EventController {
         this.eventMapper = eventMapper;
     }
 
+    /**
+     * Every published event, soonest first. Past events stay in the list because the catalogue
+     * shows them in a separate "past and closed" section; clients split on the event dates.
+     */
     @GetMapping
+    @Transactional(readOnly = true)
     public List<EventSummaryResponse> listPublished() {
-        return eventRepository.findByStatus(EventStatus.PUBLISHED, Pageable.unpaged())
-                .stream()
-                .map(eventMapper::toSummaryResponse)
+        List<Event> events = eventRepository.findByStatusOrderByStartAtAsc(EventStatus.PUBLISHED);
+        Map<UUID, Long> counts = eventRepository.activeRegistrationCounts(
+                events.stream().map(Event::getEventId).toList());
+        return events.stream()
+                .map(event -> eventMapper.toSummaryResponse(
+                        event, counts.getOrDefault(event.getEventId(), 0L)))
                 .toList();
     }
 
     @GetMapping("/{slug}")
+    @Transactional(readOnly = true)
     public EventDetailResponse getBySlug(@PathVariable String slug) {
-        return eventRepository.findBySlugAndStatus(slug, EventStatus.PUBLISHED)
-                .map(eventMapper::toDetailResponse)
+        Event event = eventRepository.findBySlugAndStatus(slug, EventStatus.PUBLISHED)
                 .orElseThrow(EventNotFoundException::new);
+        return eventMapper.toDetailResponse(
+                event, eventRepository.countActiveRegistrations(event.getEventId()));
     }
 }

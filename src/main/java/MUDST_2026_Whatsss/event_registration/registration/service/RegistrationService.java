@@ -1,0 +1,296 @@
+package MUDST_2026_Whatsss.event_registration.registration.service;
+
+import MUDST_2026_Whatsss.event_registration.auth.domain.Participant;
+import MUDST_2026_Whatsss.event_registration.auth.repository.ParticipantRepository;
+import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
+import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
+import MUDST_2026_Whatsss.event_registration.common.error.ApiException;
+import MUDST_2026_Whatsss.event_registration.common.error.ErrorCode;
+import MUDST_2026_Whatsss.event_registration.event.domain.Event;
+import MUDST_2026_Whatsss.event_registration.event.domain.EventAdminAssignment;
+import MUDST_2026_Whatsss.event_registration.event.domain.EventStatus;
+import MUDST_2026_Whatsss.event_registration.event.domain.EventType;
+import MUDST_2026_Whatsss.event_registration.event.repository.EventAdminAssignmentRepository;
+import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
+import MUDST_2026_Whatsss.event_registration.event.service.EventMapper;
+import MUDST_2026_Whatsss.event_registration.event.service.EventNotFoundException;
+import MUDST_2026_Whatsss.event_registration.registration.domain.Registration;
+import MUDST_2026_Whatsss.event_registration.registration.domain.RegistrationStatus;
+import MUDST_2026_Whatsss.event_registration.registration.domain.RegistrationStatusHistory;
+import MUDST_2026_Whatsss.event_registration.registration.repository.RegistrationRepository;
+import MUDST_2026_Whatsss.event_registration.registration.repository.RegistrationStatusHistoryRepository;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Participant registration lifecycle and the per-event participant list.
+ *
+ * <p>Capacity is enforced by locking the event row ({@code SELECT ... FOR UPDATE}) before counting
+ * active registrations, so concurrent requests for the same event are serialised and the last seat
+ * cannot be sold twice.
+ */
+@Service
+public class RegistrationService {
+
+    private static final String NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private final RegistrationRepository registrationRepository;
+    private final RegistrationStatusHistoryRepository historyRepository;
+    private final EventRepository eventRepository;
+    private final EventAdminAssignmentRepository assignmentRepository;
+    private final ParticipantRepository participantRepository;
+    private final EventMapper eventMapper;
+
+    public RegistrationService(
+            RegistrationRepository registrationRepository,
+            RegistrationStatusHistoryRepository historyRepository,
+            EventRepository eventRepository,
+            EventAdminAssignmentRepository assignmentRepository,
+            ParticipantRepository participantRepository,
+            EventMapper eventMapper) {
+        this.registrationRepository = registrationRepository;
+        this.historyRepository = historyRepository;
+        this.eventRepository = eventRepository;
+        this.assignmentRepository = assignmentRepository;
+        this.participantRepository = participantRepository;
+        this.eventMapper = eventMapper;
+    }
+
+    @Transactional
+    public RegistrationResponse register(
+            UUID eventId, CreateRegistrationRequest request, AuthenticatedUser principal) {
+        Event event = eventRepository.findByIdForUpdate(eventId)
+                .filter(candidate -> candidate.getStatus() == EventStatus.PUBLISHED)
+                .orElseThrow(EventNotFoundException::new);
+        Instant now = Instant.now();
+        if (now.isBefore(event.getRegistrationStartAt()) || !now.isBefore(event.getRegistrationEndAt())) {
+            throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
+        }
+        if (event.getEventType() == EventType.PAID) {
+            throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
+        }
+
+        Participant participant = participantFor(principal);
+        Registration registration = registrationRepository
+                .findByEvent_EventIdAndParticipantId(eventId, participant.getParticipantId())
+                .orElse(null);
+        if (registration != null && registration.getStatus().isActive()) {
+            throw new ApiException(ErrorCode.ALREADY_REGISTERED);
+        }
+        if (eventRepository.countActiveRegistrations(eventId) >= event.getMaximumParticipants()) {
+            throw new ApiException(ErrorCode.EVENT_FULL);
+        }
+
+        RegistrationStatus previous = registration == null ? null : registration.getStatus();
+        if (registration == null) {
+            registration = Registration.builder()
+                    .registrationNumber(newRegistrationNumber())
+                    .event(event)
+                    .participantId(participant.getParticipantId())
+                    .build();
+        }
+        registration.setRegisteredByUserId(principal.userId());
+        registration.setStatus(RegistrationStatus.CONFIRMED);
+        registration.setAttendeeName(attendeeName(request, participant, principal));
+        registration.setAttendeeEmail(firstNonBlank(request.attendeeEmail(), principal.email()));
+        registration.setAttendeePhone(attendeePhone(request, participant));
+        registration.setConsentAcceptedAt(now);
+        registration.setRegisteredAt(now);
+        registration.setConfirmedAt(now);
+        registration.setCancelledAt(null);
+        registration.setCancellationReason(null);
+        registration = registrationRepository.saveAndFlush(registration);
+
+        recordTransition(registration, previous, principal.userId(), null);
+        return toResponse(registration, now);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RegistrationResponse> mine(AuthenticatedUser principal) {
+        Instant now = Instant.now();
+        return participantRepository.findByUserId(principal.userId())
+                .map(participant -> registrationRepository.findMine(participant.getParticipantId()))
+                .orElse(List.of())
+                .stream()
+                .map(registration -> toResponse(registration, now))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public RegistrationResponse get(UUID registrationId, AuthenticatedUser principal) {
+        return toResponse(owned(registrationId, principal), Instant.now());
+    }
+
+    @Transactional
+    public RegistrationResponse cancel(UUID registrationId, AuthenticatedUser principal) {
+        Registration registration = owned(registrationId, principal);
+        Instant now = Instant.now();
+        if (!cancellable(registration, now)) {
+            throw new ApiException(ErrorCode.REGISTRATION_NOT_CANCELLABLE);
+        }
+        RegistrationStatus previous = registration.getStatus();
+        registration.setStatus(RegistrationStatus.CANCELLED_BY_USER);
+        registration.setCancelledAt(now);
+        registration = registrationRepository.saveAndFlush(registration);
+        recordTransition(registration, previous, principal.userId(), null);
+        return toResponse(registration, now);
+    }
+
+    /** Releases every active seat when an administrator cancels the whole event. */
+    @Transactional
+    public void cancelAllForEvent(Event event, UUID actorUserId, String reason) {
+        Instant now = Instant.now();
+        for (Registration registration : registrationRepository
+                .findByEvent_EventIdAndStatusIn(event.getEventId(), RegistrationStatus.ACTIVE)) {
+            RegistrationStatus previous = registration.getStatus();
+            registration.setStatus(RegistrationStatus.CANCELLED_EVENT);
+            registration.setCancelledAt(now);
+            registration.setCancellationReason(reason);
+            registrationRepository.save(registration);
+            recordTransition(registration, previous, actorUserId, reason);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminRegistrationResponse> listForEvent(
+            UUID eventId, String query, Pageable pageable, AuthenticatedUser principal) {
+        Event event = eventRepository.findById(eventId).orElseThrow(EventNotFoundException::new);
+        requireEventScope(event, principal);
+        String normalizedQuery = query == null ? "" : query.trim();
+        return registrationRepository.findForEvent(eventId, normalizedQuery, pageable)
+                .map(RegistrationService::toAdminResponse);
+    }
+
+    private Registration owned(UUID registrationId, AuthenticatedUser principal) {
+        UUID participantId = participantRepository.findByUserId(principal.userId())
+                .map(Participant::getParticipantId)
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        // Someone else's registration is reported as missing so IDs cannot be probed.
+        return registrationRepository.findDetailById(registrationId)
+                .filter(registration -> registration.getParticipantId().equals(participantId))
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+    }
+
+    /** Accounts created before participant profiles existed get one on first registration. */
+    private Participant participantFor(AuthenticatedUser principal) {
+        return participantRepository.findByUserId(principal.userId())
+                .orElseGet(() -> participantRepository.save(Participant.builder()
+                        .userId(principal.userId())
+                        .build()));
+    }
+
+    private void requireEventScope(Event event, AuthenticatedUser principal) {
+        if (principal.hasRole(RoleCodes.SUPER_ADMIN)) {
+            return;
+        }
+        boolean assigned = assignmentRepository.existsByEvent_EventIdAndAdminUser_UserIdAndStatus(
+                event.getEventId(), principal.userId(), EventAdminAssignment.STATUS_ACTIVE);
+        if (!assigned) {
+            throw new EventNotFoundException();
+        }
+    }
+
+    private static boolean cancellable(Registration registration, Instant now) {
+        Event event = registration.getEvent();
+        boolean seatHeld = registration.getStatus() == RegistrationStatus.CONFIRMED
+                || registration.getStatus() == RegistrationStatus.PENDING_PAYMENT;
+        return seatHeld
+                && event.getStatus() == EventStatus.PUBLISHED
+                && event.isAllowCancellation()
+                && now.isBefore(event.getStartAt())
+                && (event.getCancellationDeadlineAt() == null
+                        || now.isBefore(event.getCancellationDeadlineAt()));
+    }
+
+    private void recordTransition(
+            Registration registration, RegistrationStatus from, UUID actorUserId, String reason) {
+        historyRepository.save(RegistrationStatusHistory.builder()
+                .registrationId(registration.getRegistrationId())
+                .fromStatus(from)
+                .toStatus(registration.getStatus())
+                .changedByUserId(actorUserId)
+                .reason(reason)
+                .metadata(Map.of())
+                .build());
+    }
+
+    private RegistrationResponse toResponse(Registration registration, Instant now) {
+        Event event = registration.getEvent();
+        return new RegistrationResponse(
+                registration.getRegistrationId(),
+                registration.getRegistrationNumber(),
+                registration.getStatus(),
+                registration.getAttendeeName(),
+                registration.getAttendeeEmail(),
+                registration.getAttendeePhone(),
+                registration.getRegisteredAt(),
+                registration.getConfirmedAt(),
+                registration.getCancelledAt(),
+                registration.getCancellationReason(),
+                cancellable(registration, now),
+                eventMapper.toSummaryResponse(
+                        event, eventRepository.countActiveRegistrations(event.getEventId())));
+    }
+
+    private static AdminRegistrationResponse toAdminResponse(Registration registration) {
+        return new AdminRegistrationResponse(
+                registration.getRegistrationId(),
+                registration.getRegistrationNumber(),
+                registration.getStatus(),
+                registration.getAttendeeName(),
+                registration.getAttendeeEmail(),
+                registration.getAttendeePhone(),
+                registration.getRegisteredAt(),
+                registration.getConfirmedAt(),
+                registration.getCancelledAt(),
+                registration.getCancellationReason(),
+                registration.getCheckedInAt());
+    }
+
+    private String newRegistrationNumber() {
+        String number;
+        do {
+            StringBuilder builder = new StringBuilder("REG-");
+            for (int i = 0; i < 10; i++) {
+                builder.append(NUMBER_ALPHABET.charAt(RANDOM.nextInt(NUMBER_ALPHABET.length())));
+            }
+            number = builder.toString();
+        } while (registrationRepository.existsByRegistrationNumber(number));
+        return number;
+    }
+
+    private static String attendeeName(
+            CreateRegistrationRequest request, Participant participant, AuthenticatedUser principal) {
+        String profileName = String.join(" ",
+                participant.getFirstName() == null ? "" : participant.getFirstName().trim(),
+                participant.getLastName() == null ? "" : participant.getLastName().trim()).trim();
+        return firstNonBlank(request.attendeeName(), profileName, principal.email());
+    }
+
+    private static String attendeePhone(CreateRegistrationRequest request, Participant participant) {
+        String phone = firstNonBlank(request.attendeePhone(), participant.getPhoneNumber());
+        // The profile column allows 32 characters but the registration snapshot only 30.
+        return phone == null || phone.length() > 30 ? null : phone;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+}

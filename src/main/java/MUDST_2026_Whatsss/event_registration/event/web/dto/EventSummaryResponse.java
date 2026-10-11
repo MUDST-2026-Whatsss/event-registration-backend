@@ -7,7 +7,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Participant-safe catalogue projection. Internal lifecycle and creator data are omitted. */
+/**
+ * Participant-safe catalogue projection. Internal lifecycle and creator data are omitted.
+ *
+ * <p>{@code remainingSeats} is null when the event hides its seat count; {@code full} is always
+ * exposed so the catalogue can still disable registration.
+ */
 public record EventSummaryResponse(
         UUID eventId,
         String slug,
@@ -24,5 +29,8 @@ public record EventSummaryResponse(
         Instant startAt,
         Instant endAt,
         Instant registrationStartAt,
-        Instant registrationEndAt) {
+        Instant registrationEndAt,
+        int maximumParticipants,
+        Integer remainingSeats,
+        boolean full) {
 }
