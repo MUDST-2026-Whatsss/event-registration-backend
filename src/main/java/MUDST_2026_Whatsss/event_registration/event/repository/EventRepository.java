@@ -8,11 +8,17 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
+import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,6 +26,10 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
 
     @EntityGraph(attributePaths = "category")
     Page<Event> findByStatus(EventStatus status, Pageable pageable);
+
+    /** Public catalogue: published events that have not finished yet, soonest first. */
+    @EntityGraph(attributePaths = "category")
+    List<Event> findByStatusAndEndAtAfterOrderByStartAtAsc(EventStatus status, Instant now);
 
     @EntityGraph(attributePaths = "category")
     Optional<Event> findByEventIdAndStatus(UUID eventId, EventStatus status);
@@ -82,6 +92,10 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
             """)
     long countAssignedByStatus(@Param("userId") UUID userId, @Param("status") EventStatus status);
 
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from Event e where e.eventId = :eventId")
+    void deleteByEventId(@Param("eventId") UUID eventId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Event e left join fetch e.category where e.eventId = :eventId")
     Optional<Event> findByIdForUpdate(@Param("eventId") UUID eventId);
@@ -92,4 +106,24 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
               and status in ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
             """, nativeQuery = true)
     long countActiveRegistrations(@Param("eventId") UUID eventId);
+
+    /** Batch form of {@link #countActiveRegistrations}; events without registrations are absent. */
+    @Query(value = """
+            select event_id, count(*) from registrations
+            where event_id in (:eventIds)
+              and status in ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
+            group by event_id
+            """, nativeQuery = true)
+    List<Object[]> countActiveRegistrationsByEvent(@Param("eventIds") Collection<UUID> eventIds);
+
+    default Map<UUID, Long> activeRegistrationCounts(Collection<UUID> eventIds) {
+        if (eventIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Long> counts = new HashMap<>();
+        for (Object[] row : countActiveRegistrationsByEvent(eventIds)) {
+            counts.put((UUID) row[0], ((Number) row[1]).longValue());
+        }
+        return counts;
+    }
 }

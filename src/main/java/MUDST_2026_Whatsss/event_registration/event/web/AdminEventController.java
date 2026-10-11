@@ -16,6 +16,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -78,6 +79,16 @@ public class AdminEventController {
             @Valid @RequestBody EventWriteRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.update(eventId, version, request, user);
+    }
+
+    @DeleteMapping("/{eventId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('EVENT_UPDATE') or hasRole('SUPER_ADMIN')")
+    public void delete(
+            @PathVariable UUID eventId,
+            @RequestParam long version,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        service.delete(eventId, version, user);
     }
 
     @PostMapping("/{eventId}/submit")

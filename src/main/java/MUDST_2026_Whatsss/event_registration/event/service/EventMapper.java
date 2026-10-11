@@ -30,7 +30,7 @@ public class EventMapper {
                 category.getDescription());
     }
 
-    public EventSummaryResponse toSummaryResponse(Event event) {
+    public EventSummaryResponse toSummaryResponse(Event event, long activeRegistrations) {
         return new EventSummaryResponse(
                 event.getEventId(),
                 event.getSlug(),
@@ -47,10 +47,13 @@ public class EventMapper {
                 event.getStartAt(),
                 event.getEndAt(),
                 event.getRegistrationStartAt(),
-                event.getRegistrationEndAt());
+                event.getRegistrationEndAt(),
+                event.getMaximumParticipants(),
+                remainingSeats(event, activeRegistrations),
+                activeRegistrations >= event.getMaximumParticipants());
     }
 
-    public EventDetailResponse toDetailResponse(Event event) {
+    public EventDetailResponse toDetailResponse(Event event, long activeRegistrations) {
         return new EventDetailResponse(
                 event.getEventId(),
                 event.getSlug(),
@@ -76,7 +79,10 @@ public class EventMapper {
                 event.getContactEmail(),
                 event.getEligibility(),
                 event.isAllowCancellation(),
-                event.isShowRemainingSeats());
+                event.isShowRemainingSeats(),
+                event.getMaximumParticipants(),
+                remainingSeats(event, activeRegistrations),
+                activeRegistrations >= event.getMaximumParticipants());
     }
 
     public AdminEventResponse toAdminResponse(Event event, long registrationCount) {
@@ -115,5 +121,13 @@ public class EventMapper {
                 event.getCreatedAt(),
                 event.getUpdatedAt(),
                 event.getVersion());
+    }
+
+    /** Null when the organiser hides the count; never negative if capacity was lowered later. */
+    private static Integer remainingSeats(Event event, long activeRegistrations) {
+        if (!event.isShowRemainingSeats()) {
+            return null;
+        }
+        return (int) Math.max(0, event.getMaximumParticipants() - activeRegistrations);
     }
 }

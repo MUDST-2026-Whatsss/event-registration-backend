@@ -4,6 +4,7 @@ import MUDST_2026_Whatsss.event_registration.event.domain.EventReview;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
@@ -31,4 +32,8 @@ public interface EventReviewRepository extends JpaRepository<EventReview, UUID> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from EventReview r join fetch r.event where r.reviewId = :reviewId")
     Optional<EventReview> findByIdForUpdate(@Param("reviewId") UUID reviewId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from EventReview r where r.event.eventId = :eventId")
+    void deleteByEventId(@Param("eventId") UUID eventId);
 }
