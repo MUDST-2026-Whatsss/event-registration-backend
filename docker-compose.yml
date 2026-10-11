@@ -82,7 +82,8 @@ services:
   frontend:
     image: event-registration-frontend:local
     build:
-      context: ../event-registration-frontend
+      # Override with FRONTEND_DIR in .env if the frontend repo is somewhere else
+      context: ${FRONTEND_DIR:-../event-registration-frontend}
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:

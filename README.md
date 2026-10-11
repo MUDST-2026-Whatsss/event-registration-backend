@@ -77,28 +77,55 @@ docker compose -f docker-compose.server.yml logs -f api
 This mode does not depend on the local PostgreSQL container. Do not run destructive tests or test
 fixtures against a shared/production database.
 
-## Deploy to Kubernetes
+## Deploy to Kubernetes (Minikube)
 
-The API manifests are in `k8s/`. The cluster must provide PostgreSQL and MinIO endpoints reachable
-from the `event-registration` namespace. Create the runtime Secret before applying the manifests;
-keep its source file outside Git and supply these keys: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
-`JWT_SECRET`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`. The image is published to GHCR; for a
-private package, configure an `imagePullSecret` on the deployment service account. Update
-`CORS_ALLOWED_ORIGINS` and `STORAGE_ENDPOINT` in `k8s/configmap.yaml` for the target environment.
+Manifests are in `k8s/`:
+
+| File | Objects |
+|---|---|
+| `namespace.yaml` | Namespace `event-registration` |
+| `configmap.yaml` | ConfigMap with non-secret settings |
+| `postgres.yaml` | Headless Service + StatefulSet (PVC from `volumeClaimTemplates`) |
+| `minio.yaml` | PersistentVolumeClaim + Deployment + ClusterIP Service |
+| `deployment.yaml` | API Deployment (2 replicas, RollingUpdate, liveness/readiness probes) |
+| `service.yaml` | API NodePort Service on port `30080` |
+| `frontend.yaml` | Frontend Deployment (2 replicas) + NodePort Service on `30090`, and Service `api` used by the frontend nginx proxy |
+
+The Secret is not stored in Git; create it with `kubectl create secret`.
 
 ```bash
-kubectl create namespace event-registration
-kubectl -n event-registration create secret generic event-registration-api \
-  --from-env-file=/secure/path/event-registration-k8s.env
-kubectl apply -f k8s/
+minikube start
+eval $(minikube docker-env)          # build images inside Minikube
+docker build -t event-registration-api:local .
+docker build -t event-registration-minio:RELEASE.2025-10-15T17-29-55Z -f docker/minio/Dockerfile .
+docker build -t event-registration-frontend:local ../event-registration-frontend   # develop branch
+
+kubectl apply -f k8s/namespace.yaml
+kubectl -n event-registration create secret generic event-registration-secret \
+  --from-literal=DB_USERNAME=event_app \
+  --from-literal=DB_PASSWORD=$(openssl rand -hex 16) \
+  --from-literal=JWT_SECRET=$(openssl rand -base64 48) \
+  --from-literal=STORAGE_ACCESS_KEY=event_minio_admin \
+  --from-literal=STORAGE_SECRET_KEY=$(openssl rand -hex 16)
+kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/minio.yaml -f k8s/service.yaml
+kubectl -n event-registration rollout status statefulset/postgres
+sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|event-registration-api:local|" k8s/deployment.yaml | kubectl apply -f -
 kubectl -n event-registration rollout status deployment/event-registration-api
+kubectl apply -f k8s/frontend.yaml
+kubectl -n event-registration get pods
+
+# Open the website at http://localhost:8090
+kubectl -n event-registration port-forward service/event-registration-frontend 8090:80
 ```
 
-GitHub Actions publishes the commit-tagged image on pushes to `main`. To enable automated rollout,
-add the repository variable `K8S_DEPLOY_ENABLED=true` and the `KUBE_CONFIG` Actions secret. The
-workflow applies the manifests, switches the deployment to the tested commit image, and waits for
-the rollout. The kubeconfig principal needs permission to manage the namespace resources and update
-the API Deployment.
+Open the site through `http://localhost:8090` (or `http://<minikube ip>:30090` on Linux). The API only
+accepts sign-in requests from origins listed in `CORS_ALLOWED_ORIGINS` in `k8s/configmap.yaml`; add
+any other URL you use there.
+
+GitHub Actions deploys automatically on every push to `main`: after tests pass and the image is
+pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner, loads the tested
+image, builds the frontend image from the frontend repo's `develop` branch, creates the Secret, applies
+`k8s/`, waits for the rollout and calls `/api/health` directly and through the frontend.
 
 The Compose files build the pinned final MinIO community security release from its upstream Go tag
 because that release is not available as a public registry image. The first build takes longer;

@@ -117,3 +117,8 @@ postman/globals/workspace.globals.yaml
 cypress/screenshots/
 cypress/videos/
 
+
+# Local-only files: session cookies, database dumps, frontend repo cloned inside this folder
+cookies.txt
+*.dump
+/event-registration-frontend/
