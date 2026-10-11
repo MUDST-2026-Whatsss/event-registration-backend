@@ -28,6 +28,11 @@ jobs:
       - name: Build and run unit + integration tests
         run: ./mvnw -B verify
 
+      - name: Run DB proposal unit tests
+        run: |
+          npm ci --prefix Unit_test
+          node Unit_test/run_tests.js
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -61,11 +66,12 @@ jobs:
           repository: MUDST-2026-Whatsss/event-registration-frontend
           path: frontend
 
-      - name: Run Frontend Cypress E2E tests
+      - name: Run Frontend unit tests and production build
         working-directory: frontend
         run: |
           npm ci
-          npm run test:e2e
+          npm test
+          npm run build
 
       - name: Stop Docker Compose services
         if: always()
@@ -110,3 +116,32 @@ jobs:
           path: |
             target/surefire-reports
             target/failsafe-reports
+
+  deploy-kubernetes:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.K8S_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure Kubernetes access
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Apply Kubernetes resources with tested image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/event-registration:${{ github.sha }}
+        run: |
+          IMAGE="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          kubectl apply -f k8s/namespace.yaml -f k8s/configmap.yaml -f k8s/service.yaml
+          sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|$IMAGE|" k8s/deployment.yaml > "$RUNNER_TEMP/deployment.yaml"
+          kubectl apply -f "$RUNNER_TEMP/deployment.yaml"
+          kubectl -n event-registration rollout status deployment/event-registration-api --timeout=180s
