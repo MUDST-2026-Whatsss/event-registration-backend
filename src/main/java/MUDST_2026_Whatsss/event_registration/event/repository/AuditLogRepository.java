@@ -11,22 +11,32 @@ import java.util.UUID;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
+    /**
+     * The console shows the actor's participant name, so the search matches that name as well as
+     * the action, target label and actor email.
+     */
     @Query(value = """
             select a from AuditLog a
             left join fetch a.actor actor
+            left join Participant p on p.userId = actor.userId
             where (:query = ''
                    or lower(a.action) like lower(concat('%', :query, '%'))
                    or lower(coalesce(a.targetLabel, '')) like lower(concat('%', :query, '%'))
-                   or lower(coalesce(actor.email, '')) like lower(concat('%', :query, '%')))
+                   or lower(coalesce(actor.email, '')) like lower(concat('%', :query, '%'))
+                   or lower(concat(coalesce(p.firstName, ''), ' ', coalesce(p.lastName, '')))
+                      like lower(concat('%', :query, '%')))
               and (:targetType = '' or a.targetType = :targetType)
             """,
             countQuery = """
             select count(a.auditLogId) from AuditLog a
             left join a.actor actor
+            left join Participant p on p.userId = actor.userId
             where (:query = ''
                    or lower(a.action) like lower(concat('%', :query, '%'))
                    or lower(coalesce(a.targetLabel, '')) like lower(concat('%', :query, '%'))
-                   or lower(coalesce(actor.email, '')) like lower(concat('%', :query, '%')))
+                   or lower(coalesce(actor.email, '')) like lower(concat('%', :query, '%'))
+                   or lower(concat(coalesce(p.firstName, ''), ' ', coalesce(p.lastName, '')))
+                      like lower(concat('%', :query, '%')))
               and (:targetType = '' or a.targetType = :targetType)
             """)
     Page<AuditLog> findForAdministration(

@@ -125,6 +125,26 @@ class AdminAccessControlIT extends PostgresIntegrationTest {
                                 .isEqualTo(ErrorCode.ROLE_NOT_FOUND));
     }
 
+    @Test
+    void auditSearchMatchesActorDisplayName() {
+        UUID actorId = insertUser("named-actor", true);
+        AuthenticatedUser namedActor = new AuthenticatedUser(
+                actorId, "named-actor@example.test", "SUPER_ADMIN",
+                List.of("SUPER_ADMIN"), List.of("ROLE_ASSIGN", "AUDIT_VIEW"));
+        userService.createRole(new CreateRoleRequest(
+                "NAME_SEARCH", "Name Search", null,
+                "GLOBAL", "ACTIVE", Set.of("AUDIT_VIEW")), namedActor);
+
+        // insertUser names participants "Managed Account".
+        for (String query : List.of("managed", "ACCOUNT", "Managed Account")) {
+            var page = auditService.logs(query, "ROLE", PageRequest.of(0, 10));
+            assertThat(page.getTotalElements()).as(query).isEqualTo(1);
+            assertThat(page.getContent().get(0).actor().displayName()).isEqualTo("Managed Account");
+        }
+        assertThat(auditService.logs("nobody-by-that-name", "ROLE", PageRequest.of(0, 10))
+                .getTotalElements()).isZero();
+    }
+
     private List<String> roleCodesOf(UUID userId) {
         return jdbcTemplate.queryForList("""
                 select r.role_code from auth_user_roles ur
