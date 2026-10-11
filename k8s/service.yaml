@@ -3,13 +3,12 @@ kind: Service
 metadata:
   name: event-registration-api
   namespace: event-registration
-  labels:
-    app.kubernetes.io/name: event-registration-api
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
-    app.kubernetes.io/name: event-registration-api
+    app: event-registration-api
   ports:
-    - name: http
+    - protocol: TCP
       port: 8080
-      targetPort: http
+      targetPort: 8080
+      nodePort: 30080

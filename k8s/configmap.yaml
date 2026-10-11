@@ -1,24 +1,23 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: event-registration-api
+  name: event-registration-config
   namespace: event-registration
 data:
+  # Minikube is a plain-HTTP dev environment, so use the local profile
+  # (non-secure cookies, auto-verified sign up) like docker-compose does.
+  SPRING_PROFILES_ACTIVE: local
+  DB_URL: jdbc:postgresql://postgres:5432/event_registration
   DB_SCHEMA: public
+  POSTGRES_DB: event_registration
   JWT_ISSUER: event-registration
   ACCESS_TOKEN_TTL: 15m
   REFRESH_TOKEN_TTL: 7d
-  COOKIE_SECURE: "true"
+  COOKIE_SECURE: "false"
   COOKIE_SAME_SITE: Lax
-  CORS_ALLOWED_ORIGINS: https://events.example.com
-  LOCKOUT_MAX_ATTEMPTS: "5"
-  LOCKOUT_DURATION: 15m
-  RATE_LIMIT_ENABLED: "true"
-  RATE_LIMIT_TRUST_FORWARDED_FOR: "false"
+  CORS_ALLOWED_ORIGINS: http://localhost:5173
   STORAGE_ENABLED: "true"
-  STORAGE_ENDPOINT: http://minio.event-registration.svc.cluster.local:9000
+  STORAGE_ENDPOINT: http://minio:9000
   STORAGE_BUCKET: event-registration
-  STORAGE_MAX_IMAGE_SIZE: 2MB
-  STORAGE_MAX_IMAGE_WIDTH: "6000"
-  STORAGE_MAX_IMAGE_HEIGHT: "6000"
+  # Readiness probe waits for the database and MinIO too
   MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE: readinessState,db,objectStorage
