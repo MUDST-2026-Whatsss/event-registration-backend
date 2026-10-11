@@ -183,7 +183,7 @@ class RegistrationIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void publicCatalogueShowsRemainingSeatsAndHidesFinishedEvents() {
+    void publicCatalogueShowsRemainingSeatsAndKeepsPastEvents() {
         UUID upcoming = fixtures.publishedEvent(admin, "Upcoming catalogue event", 10);
         UUID finished = fixtures.publishedEvent(admin, "Finished catalogue event", 10);
         service.register(upcoming, consent(), fixtures.participant("ivan", "Ivan", null));
@@ -196,7 +196,8 @@ class RegistrationIT extends PostgresIntegrationTest {
 
         var catalogue = eventController.listPublished();
 
-        assertThat(catalogue).extracting(item -> item.eventId()).contains(upcoming).doesNotContain(finished);
+        // Past events stay listed: the catalogue renders them in its own "past and closed" section.
+        assertThat(catalogue).extracting(item -> item.eventId()).contains(upcoming, finished);
         var summary = catalogue.stream().filter(item -> item.eventId().equals(upcoming)).findFirst().orElseThrow();
         assertThat(summary.maximumParticipants()).isEqualTo(10);
         assertThat(summary.remainingSeats()).isEqualTo(9);

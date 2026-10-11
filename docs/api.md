@@ -18,7 +18,7 @@ Base path: `/api/v1`
 | PATCH | `/api/v1/auth/me` | Authenticated | Active |
 | POST | `/api/v1/auth/change-password` | Authenticated | Active |
 | GET | `/api/v1/event-categories` | Public | Active |
-| GET | `/api/v1/events` | Public | Active; published events that have not ended, soonest first, with seat availability |
+| GET | `/api/v1/events` | Public | Active; all published events, soonest first, with seat availability (clients split upcoming/past by date) |
 | GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
 | POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events only, capacity enforced under a row lock |
 | GET | `/api/v1/registrations` | `REGISTRATION_READ_SELF` | Active; caller's registrations, newest first |
