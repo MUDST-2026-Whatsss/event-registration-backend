@@ -89,6 +89,7 @@ Manifests are in `k8s/`:
 | `minio.yaml` | PersistentVolumeClaim + Deployment + ClusterIP Service |
 | `deployment.yaml` | API Deployment (2 replicas, RollingUpdate, liveness/readiness probes) |
 | `service.yaml` | API NodePort Service on port `30080` |
+| `frontend.yaml` | Frontend Deployment (2 replicas) + NodePort Service on `30090`, and Service `api` used by the frontend nginx proxy |
 
 The Secret is not stored in Git; create it with `kubectl create secret`.
 
@@ -97,6 +98,7 @@ minikube start
 eval $(minikube docker-env)          # build images inside Minikube
 docker build -t event-registration-api:local .
 docker build -t event-registration-minio:RELEASE.2025-10-15T17-29-55Z -f docker/minio/Dockerfile .
+docker build -t event-registration-frontend:local ../event-registration-frontend   # develop branch
 
 kubectl apply -f k8s/namespace.yaml
 kubectl -n event-registration create secret generic event-registration-secret \
@@ -109,14 +111,21 @@ kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/minio.yaml -f k8
 kubectl -n event-registration rollout status statefulset/postgres
 sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|event-registration-api:local|" k8s/deployment.yaml | kubectl apply -f -
 kubectl -n event-registration rollout status deployment/event-registration-api
+kubectl apply -f k8s/frontend.yaml
 kubectl -n event-registration get pods
 
-minikube service event-registration-api -n event-registration --url   # open the API
+# Open the website at http://localhost:8090
+kubectl -n event-registration port-forward service/event-registration-frontend 8090:80
 ```
+
+Open the site through `http://localhost:8090` (or `http://<minikube ip>:30090` on Linux). The API only
+accepts sign-in requests from origins listed in `CORS_ALLOWED_ORIGINS` in `k8s/configmap.yaml`; add
+any other URL you use there.
 
 GitHub Actions deploys automatically on every push to `main`: after tests pass and the image is
 pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner, loads the tested
-image, creates the Secret, applies `k8s/`, waits for the rollout and calls `/api/health`.
+image, builds the frontend image from the frontend repo's `develop` branch, creates the Secret, applies
+`k8s/`, waits for the rollout and calls `/api/health` directly and through the frontend.
 
 The Compose files build the pinned final MinIO community security release from its upstream Go tag
 because that release is not available as a public registry image. The first build takes longer;
