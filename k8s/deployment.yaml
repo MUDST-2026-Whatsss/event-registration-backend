@@ -3,102 +3,80 @@ kind: Deployment
 metadata:
   name: event-registration-api
   namespace: event-registration
-  labels:
-    app.kubernetes.io/name: event-registration-api
 spec:
   replicas: 2
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: event-registration-api
+      app: event-registration-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: event-registration-api
+        app: event-registration-api
     spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        seccompProfile:
-          type: RuntimeDefault
       containers:
         - name: api
+          # CI replaces this with the tested image tag (commit SHA)
           image: ghcr.io/mudst-2026-whatsss/event-registration:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+            - containerPort: 8080
           envFrom:
             - configMapRef:
-                name: event-registration-api
+                name: event-registration-config
           env:
-            - name: DB_URL
-              valueFrom:
-                secretKeyRef:
-                  name: event-registration-api
-                  key: DB_URL
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: event-registration-api
+                  name: event-registration-secret
                   key: DB_USERNAME
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: event-registration-api
+                  name: event-registration-secret
                   key: DB_PASSWORD
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: event-registration-api
+                  name: event-registration-secret
                   key: JWT_SECRET
             - name: STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: event-registration-api
+                  name: event-registration-secret
                   key: STORAGE_ACCESS_KEY
             - name: STORAGE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: event-registration-api
+                  name: event-registration-secret
                   key: STORAGE_SECRET_KEY
-          startupProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: http
-            periodSeconds: 5
-            failureThreshold: 36
+          # Restart the container if it stops responding
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: 8080
+            initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 3
-            failureThreshold: 3
+            failureThreshold: 5
+          # Only send traffic once the app, database and storage are ready
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: 8080
+            initialDelaySeconds: 20
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              memory: "512Mi"
+              cpu: "250m"
             limits:
+              memory: "1Gi"
               cpu: "1"
-              memory: 1Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-      volumes:
-        - name: tmp
-          emptyDir: {}

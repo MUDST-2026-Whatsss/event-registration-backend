@@ -12,3 +12,5 @@ Unit_test
 *.dump
 *.log
 .DS_Store
+event-registration-frontend
+frontend
