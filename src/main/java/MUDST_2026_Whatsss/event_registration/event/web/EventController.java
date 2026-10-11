@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,12 +30,14 @@ public class EventController {
         this.eventMapper = eventMapper;
     }
 
-    /** Upcoming and in-progress published events; finished ones drop out of the catalogue. */
+    /**
+     * Every published event, soonest first. Past events stay in the list because the catalogue
+     * shows them in a separate "past and closed" section; clients split on the event dates.
+     */
     @GetMapping
     @Transactional(readOnly = true)
     public List<EventSummaryResponse> listPublished() {
-        List<Event> events = eventRepository.findByStatusAndEndAtAfterOrderByStartAtAsc(
-                EventStatus.PUBLISHED, Instant.now());
+        List<Event> events = eventRepository.findByStatusOrderByStartAtAsc(EventStatus.PUBLISHED);
         Map<UUID, Long> counts = eventRepository.activeRegistrationCounts(
                 events.stream().map(Event::getEventId).toList());
         return events.stream()

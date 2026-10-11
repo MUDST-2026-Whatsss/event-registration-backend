@@ -14,7 +14,6 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -27,9 +26,9 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
     @EntityGraph(attributePaths = "category")
     Page<Event> findByStatus(EventStatus status, Pageable pageable);
 
-    /** Public catalogue: published events that have not finished yet, soonest first. */
+    /** Public catalogue, soonest first. */
     @EntityGraph(attributePaths = "category")
-    List<Event> findByStatusAndEndAtAfterOrderByStartAtAsc(EventStatus status, Instant now);
+    List<Event> findByStatusOrderByStartAtAsc(EventStatus status);
 
     @EntityGraph(attributePaths = "category")
     Optional<Event> findByEventIdAndStatus(UUID eventId, EventStatus status);
