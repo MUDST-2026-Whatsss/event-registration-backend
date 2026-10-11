@@ -114,29 +114,61 @@ jobs:
 
   deploy-kubernetes:
     needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.K8S_DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Configure Kubernetes access
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+      - name: Start Minikube
         run: |
-          mkdir -p "$HOME/.kube"
-          printf '%s' "$KUBE_CONFIG" > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
+          curl -sLO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          minikube start --driver=docker
+          kubectl get nodes
 
-      - name: Apply Kubernetes resources with tested image
-        env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/event-registration:${{ github.sha }}
+      - name: Load images into Minikube
         run: |
-          IMAGE="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
-          kubectl apply -f k8s/namespace.yaml -f k8s/configmap.yaml -f k8s/service.yaml
-          sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|$IMAGE|" k8s/deployment.yaml > "$RUNNER_TEMP/deployment.yaml"
-          kubectl apply -f "$RUNNER_TEMP/deployment.yaml"
-          kubectl -n event-registration rollout status deployment/event-registration-api --timeout=180s
+          IMAGE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration:${{ github.sha }}"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          # Use Minikube's Docker so the cluster can see the images directly
+          eval $(minikube docker-env)
+          echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+          docker pull "$IMAGE"
+          docker build -t event-registration-minio:RELEASE.2025-10-15T17-29-55Z -f docker/minio/Dockerfile .
+
+      - name: Create namespace and secret
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl -n event-registration create secret generic event-registration-secret \
+            --from-literal=DB_USERNAME=event_app \
+            --from-literal=DB_PASSWORD=$(openssl rand -hex 16) \
+            --from-literal=JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n') \
+            --from-literal=STORAGE_ACCESS_KEY=event_minio_admin \
+            --from-literal=STORAGE_SECRET_KEY=$(openssl rand -hex 16)
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/minio.yaml -f k8s/service.yaml
+          # Wait for the database and storage before starting the API
+          kubectl -n event-registration rollout status statefulset/postgres --timeout=180s
+          kubectl -n event-registration rollout status deployment/minio --timeout=180s
+          # Deploy the exact image that was tested in the previous job
+          sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|$IMAGE|" k8s/deployment.yaml | kubectl apply -f -
+          kubectl -n event-registration rollout status deployment/event-registration-api --timeout=300s
+
+      - name: Smoke test deployed API
+        run: |
+          kubectl -n event-registration get pods,svc,pvc
+          kubectl -n event-registration port-forward service/event-registration-api 8080:8080 &
+          sleep 5
+          curl -sf http://127.0.0.1:8080/api/health
+          curl -sf http://127.0.0.1:8080/actuator/health/readiness
+
+      - name: Show pod details on failure
+        if: failure()
+        run: |
+          kubectl -n event-registration get pods -o wide
+          kubectl -n event-registration describe pods
+          kubectl -n event-registration logs deployment/event-registration-api --tail=100

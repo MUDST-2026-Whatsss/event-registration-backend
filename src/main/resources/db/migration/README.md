@@ -21,3 +21,7 @@ Important:
 V6 has been applied to the local database and validated against a temporary clone
 of V5. B6 has also been migrated and validated successfully on an empty PostgreSQL
 18.6 database through Flyway 12.4.0.
+
+`beforeEachMigrate.sql` is a Flyway callback, not a migration. B6 clears `search_path` for its
+session, so the callback resets it to the application schema before every migration; without it,
+V7 fails on a brand-new database. Callbacks have no checksum, so existing databases are unaffected.
