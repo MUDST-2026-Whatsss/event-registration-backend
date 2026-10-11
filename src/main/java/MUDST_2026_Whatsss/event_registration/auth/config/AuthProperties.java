@@ -32,6 +32,8 @@ public class AuthProperties {
 
     private Duration refreshTokenTtl = Duration.ofDays(7);
 
+    private Duration passwordResetTtl = Duration.ofMinutes(30);
+
     /** Local/test escape hatch; production registrations must verify their email before login. */
     private boolean registrationAutoVerify = false;
 

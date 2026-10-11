@@ -2,14 +2,18 @@ package MUDST_2026_Whatsss.event_registration.auth;
 
 import MUDST_2026_Whatsss.event_registration.PostgresIntegrationTest;
 import MUDST_2026_Whatsss.event_registration.auth.domain.AuthSession;
+import MUDST_2026_Whatsss.event_registration.auth.domain.ActionTokenType;
+import MUDST_2026_Whatsss.event_registration.auth.domain.AuthActionToken;
 import MUDST_2026_Whatsss.event_registration.auth.domain.AuthRole;
 import MUDST_2026_Whatsss.event_registration.auth.domain.AuthUser;
+import MUDST_2026_Whatsss.event_registration.auth.repository.AuthActionTokenRepository;
 import MUDST_2026_Whatsss.event_registration.auth.repository.AuthRoleRepository;
 import MUDST_2026_Whatsss.event_registration.auth.repository.AuthSessionRepository;
 import MUDST_2026_Whatsss.event_registration.auth.repository.AuthUserRepository;
 import MUDST_2026_Whatsss.event_registration.auth.security.AuthCookieService;
 import MUDST_2026_Whatsss.event_registration.auth.security.JwtService;
 import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
+import MUDST_2026_Whatsss.event_registration.auth.security.TokenHasher;
 import MUDST_2026_Whatsss.event_registration.auth.service.AuthService;
 import MUDST_2026_Whatsss.event_registration.auth.service.RequestContext;
 import MUDST_2026_Whatsss.event_registration.auth.service.SessionService;
@@ -66,6 +70,12 @@ class AuthSecurityIT extends PostgresIntegrationTest {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private AuthActionTokenRepository actionTokenRepository;
+
+    @Autowired
+    private TokenHasher tokenHasher;
+
     @Test
     void loginWithoutCsrfIsRejectedBeforeCredentialsAreProcessed() throws Exception {
         mockMvc.perform(post("/api/v1/auth/login")
@@ -98,6 +108,69 @@ class AuthSecurityIT extends PostgresIntegrationTest {
                                     && cookie.contains("HttpOnly")
                                     && cookie.contains("SameSite=Lax")));
                 });
+    }
+
+    @Test
+    void forgotPasswordDoesNotRevealWhetherAnAccountExists() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"missing-" + UUID.randomUUID()
+                                + "@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(
+                        "If an account exists for this email, we'll send a password reset link."));
+    }
+
+    @Test
+    void passwordResetConsumesTokenChangesPasswordAndRevokesSessions() throws Exception {
+        String email = uniqueEmail();
+        register(email);
+
+        AuthService.LoginResult login = authService.login(
+                new LoginRequest(email, "Password123"),
+                RequestContext.of("127.0.0.1", "password-reset-test"));
+        UUID userId = login.user().userId();
+        String rawToken = tokenHasher.generateToken();
+        actionTokenRepository.saveAndFlush(AuthActionToken.builder()
+                .userId(userId)
+                .tokenType(ActionTokenType.PASSWORD_RESET)
+                .tokenHash(tokenHasher.hash(rawToken))
+                .expiresAt(Instant.now().plusSeconds(300))
+                .createdAt(Instant.now())
+                .build());
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + rawToken
+                                + "\",\"newPassword\":\"Changed123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(
+                        "Password reset successfully. Sign in with your new password."));
+
+        assertTrue(sessionRepository.findAllByUserId(userId).stream()
+                .allMatch(session -> SessionService.REASON_PASSWORD_CHANGED.equals(
+                        session.getRevokedReason())));
+
+        ApiException oldPassword = org.junit.jupiter.api.Assertions.assertThrows(
+                ApiException.class,
+                () -> authService.login(
+                        new LoginRequest(email, "Password123"),
+                        RequestContext.of("127.0.0.1", "password-reset-test")));
+        assertEquals(ErrorCode.INVALID_CREDENTIALS, oldPassword.getErrorCode());
+
+        authService.login(
+                new LoginRequest(email, "Changed123"),
+                RequestContext.of("127.0.0.1", "password-reset-test"));
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + rawToken
+                                + "\",\"newPassword\":\"Another123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PASSWORD_RESET_TOKEN"));
     }
 
     @Test

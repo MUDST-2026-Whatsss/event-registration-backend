@@ -27,6 +27,7 @@ public enum ErrorCode {
     SESSION_REVOKED(HttpStatus.UNAUTHORIZED, "The session was revoked. Sign in again."),
 
     INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "The current password is incorrect."),
+    INVALID_PASSWORD_RESET_TOKEN(HttpStatus.BAD_REQUEST, "This password reset link is invalid or has expired."),
 
     EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested event was not found."),
     EVENT_CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested event category was not found."),

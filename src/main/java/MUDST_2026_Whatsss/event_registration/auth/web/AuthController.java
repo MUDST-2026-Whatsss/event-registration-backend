@@ -5,12 +5,15 @@ import MUDST_2026_Whatsss.event_registration.auth.security.AuthCookieService;
 import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.auth.security.JwtService;
 import MUDST_2026_Whatsss.event_registration.auth.service.AuthService;
+import MUDST_2026_Whatsss.event_registration.auth.service.PasswordResetService;
 import MUDST_2026_Whatsss.event_registration.auth.service.RequestContext;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.AuthResponse;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.ChangePasswordRequest;
+import MUDST_2026_Whatsss.event_registration.auth.web.dto.ForgotPasswordRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.LoginRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.MessageResponse;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.RegisterRequest;
+import MUDST_2026_Whatsss.event_registration.auth.web.dto.ResetPasswordRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.SelectRoleRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.UpdateProfileRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.UserResponse;
@@ -46,15 +49,18 @@ import java.util.List;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
     private final AuthCookieService cookieService;
     private final JwtService jwtService;
     private final ClientIpResolver ipResolver;
 
     public AuthController(AuthService authService,
+                          PasswordResetService passwordResetService,
                           AuthCookieService cookieService,
                           JwtService jwtService,
                           ClientIpResolver ipResolver) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
         this.cookieService = cookieService;
         this.jwtService = jwtService;
         this.ipResolver = ipResolver;
@@ -80,6 +86,19 @@ public class AuthController {
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.CREATED)
     public UserResponse register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
+    }
+
+    @PostMapping("/forgot-password")
+    public MessageResponse forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request.email());
+        return new MessageResponse(
+                "If an account exists for this email, we'll send a password reset link.");
+    }
+
+    @PostMapping("/reset-password")
+    public MessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request);
+        return new MessageResponse("Password reset successfully. Sign in with your new password.");
     }
 
     @PostMapping("/login")

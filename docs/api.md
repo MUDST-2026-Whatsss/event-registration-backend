@@ -120,6 +120,18 @@ contain a generated UUID, so public reads use a one-year immutable cache header.
 The frontend first calls `GET /api/v1/auth/csrf`. For POST, PUT, PATCH, and DELETE requests it sends
 the returned token in `X-XSRF-TOKEN`; cookies are sent with `credentials: include`.
 
+Password recovery uses two public endpoints, both protected by CSRF:
+
+- `POST /api/v1/auth/forgot-password` with `{ "email": "user@example.com" }` always returns the
+  same success message so callers cannot discover registered addresses. For an existing local
+  account, the API creates a hashed, single-use token and emails a link to the frontend.
+- `POST /api/v1/auth/reset-password` with
+  `{ "token": "...", "newPassword": "NewPassword123" }` consumes the token, changes the password,
+  clears login lockout state, and revokes every existing refresh session for that account.
+
+Reset links expire according to `PASSWORD_RESET_TTL` (30 minutes by default). The database stores
+only a SHA-256 digest of each random token, never the usable value from the email.
+
 Access and refresh tokens never appear in JSON response bodies.
 
 An invalid or missing CSRF token returns HTTP 403 with `CSRF_TOKEN_INVALID`. A valid request made
@@ -150,7 +162,7 @@ Do not branch frontend logic on human-readable messages.
 - Registrations: QR ticket token and create-registration idempotency key
 - Event operations: check-in and CSV export
 - Administration still planned: invitations and aggregate dashboard endpoints
-- Auth completion: forgot/reset password, email verification, invitation acceptance
+- Auth completion still planned: email verification and invitation acceptance
 - Payment: disabled provider abstraction first, verified provider/webhook integration later
 
 The endpoint-by-endpoint implementation order is maintained in the workspace `PLAN.md`.
