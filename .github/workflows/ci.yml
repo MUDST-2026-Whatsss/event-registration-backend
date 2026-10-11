@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Run the pipeline (including the Kubernetes deploy) by hand from the Actions tab
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -98,7 +100,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
@@ -114,7 +116,7 @@ jobs:
 
   deploy-kubernetes:
     needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
     steps:
@@ -125,7 +127,8 @@ jobs:
         run: |
           curl -sLO https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          minikube start --driver=docker
+          # Newer Minikube defaults to containerd; use Docker so docker-env works
+          minikube start --driver=docker --container-runtime=docker
           kubectl get nodes
 
       - name: Load images into Minikube
