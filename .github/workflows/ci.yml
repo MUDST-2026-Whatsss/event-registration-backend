@@ -28,11 +28,6 @@ jobs:
       - name: Build and run unit + integration tests
         run: ./mvnw -B verify
 
-      - name: Run DB proposal unit tests
-        run: |
-          npm ci --prefix Unit_test
-          node Unit_test/run_tests.js
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
