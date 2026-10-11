@@ -83,6 +83,56 @@ class AdminAccessControlIT extends PostgresIntegrationTest {
                 .getTotalElements()).isEqualTo(1);
     }
 
+    @Test
+    void deletingCustomRoleKeepsOtherRolesAndFallsBackToUser() {
+        var role = userService.createRole(new CreateRoleRequest(
+                "TEMP_REVIEWER", "Temp Reviewer", null,
+                "GLOBAL", "ACTIVE", Set.of("AUDIT_VIEW")), principal);
+        UUID onlyCustom = insertUser("only-custom", false);
+        assignRole(onlyCustom, "TEMP_REVIEWER");
+        UUID adminToo = insertUser("admin-too", false);
+        assignRole(adminToo, "ADMIN");
+        assignRole(adminToo, "TEMP_REVIEWER");
+
+        userService.deleteRole(role.roleId(), principal);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from auth_roles where role_code = 'TEMP_REVIEWER'", Long.class)).isZero();
+        assertThat(roleCodesOf(onlyCustom)).containsExactly("USER");
+        assertThat(roleCodesOf(adminToo)).containsExactly("ADMIN");
+        assertThat(auditService.logs("ROLE_DELETED", "ROLE", PageRequest.of(0, 10))
+                .getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void systemRolesCannotBeDeleted() {
+        UUID adminRoleId = jdbcTemplate.queryForObject(
+                "select role_id from auth_roles where role_code = 'ADMIN'", UUID.class);
+
+        assertThatThrownBy(() -> userService.deleteRole(adminRoleId, principal))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_USER_STATE));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from auth_roles where role_code = 'ADMIN'", Long.class)).isEqualTo(1);
+    }
+
+    @Test
+    void deletingUnknownRoleIsNotFound() {
+        assertThatThrownBy(() -> userService.deleteRole(UUID.randomUUID(), principal))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.ROLE_NOT_FOUND));
+    }
+
+    private List<String> roleCodesOf(UUID userId) {
+        return jdbcTemplate.queryForList("""
+                select r.role_code from auth_user_roles ur
+                join auth_roles r on r.role_id = ur.role_id
+                where ur.user_id = ? order by r.role_code
+                """, String.class, userId);
+    }
+
     private UUID insertUser(String prefix, boolean participant) {
         UUID userId = UUID.randomUUID();
         jdbcTemplate.update(

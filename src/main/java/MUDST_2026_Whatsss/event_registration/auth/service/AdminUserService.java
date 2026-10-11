@@ -186,6 +186,45 @@ public class AdminUserService {
         return toRoleResponse(role);
     }
 
+    /**
+     * Deletes a custom role. Holders keep their other roles; anyone left without a role falls back
+     * to {@code USER}. Their sessions are revoked because issued tokens still carry the old role.
+     */
+    @Transactional
+    public void deleteRole(UUID roleId, AuthenticatedUser principal) {
+        AuthRole role = lockedRole(roleId);
+        if (role.isSystem()) {
+            throw new ApiException(ErrorCode.INVALID_USER_STATE, "System roles cannot be deleted.");
+        }
+        if (roleRepository.countInvitationsByRoleId(roleId) > 0) {
+            throw new ApiException(ErrorCode.INVALID_USER_STATE,
+                    "A role referenced by invitations cannot be deleted.");
+        }
+        AuthRole fallback = roleRepository.findByRoleCode(RoleCodes.USER)
+                .orElseThrow(() -> new ApiException(ErrorCode.ROLE_NOT_FOUND));
+
+        Instant now = Instant.now();
+        List<AuthUser> holders = userRepository.findAllByRoleCode(role.getRoleCode());
+        for (AuthUser holder : holders) {
+            Set<AuthRole> remaining = holder.getRoles().stream()
+                    .filter(candidate -> !candidate.getRoleId().equals(roleId))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (remaining.isEmpty()) {
+                remaining.add(fallback);
+            }
+            holder.setRoles(remaining);
+            holder.setUpdatedAt(now);
+        }
+        userRepository.saveAllAndFlush(holders);
+        holders.forEach(holder ->
+                sessionService.revokeAllForUser(holder.getUserId(), SESSION_REASON_ROLES_CHANGED));
+
+        auditRole(actor(principal), "ROLE_DELETED", role,
+                Map.of("roleCode", role.getRoleCode(), "affectedUsers", holders.size()));
+        roleRepository.delete(role);
+        roleRepository.flush();
+    }
+
     @Transactional
     public AdminUserResponse updateStatus(
             UUID userId, UpdateUserStatusRequest request, AuthenticatedUser principal) {

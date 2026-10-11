@@ -48,4 +48,8 @@ public interface AuthRoleRepository extends JpaRepository<AuthRole, UUID> {
     Optional<AuthRole> findByIdForUpdate(@Param("roleId") UUID roleId);
 
     boolean existsByRoleCode(String roleCode);
+
+    /** Invitations are not mapped as entities, but their foreign key still blocks role deletion. */
+    @Query(value = "select count(*) from auth_invitations where role_id = :roleId", nativeQuery = true)
+    long countInvitationsByRoleId(@Param("roleId") UUID roleId);
 }
