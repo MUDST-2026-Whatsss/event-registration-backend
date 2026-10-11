@@ -14,9 +14,10 @@ Available at runtime:
 - Current UUID event/category persistence model with pageable repository and validation foundation
 - Private MinIO object storage with validated event-image upload, public read proxy, and owner-scoped deletion
 
-Administrative event lifecycle, review, audit, and category APIs are active. Public event catalogue
-and participant registration endpoints are still planned. See `docs/api.md` for the current API
-contract.
+Administrative event lifecycle, review, audit, and category APIs are active, as are the public
+event catalogue (with remaining seats), participant registration and cancellation with capacity
+enforcement, and the per-event participant list for administrators. See `docs/api.md` for the
+current API contract.
 
 ## Requirements
 

@@ -4,6 +4,7 @@ import MUDST_2026_Whatsss.event_registration.event.domain.EventAdminAssignment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,4 +25,8 @@ public interface EventAdminAssignmentRepository extends JpaRepository<EventAdmin
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from EventAdminAssignment a join fetch a.adminUser where a.event.eventId = :eventId and a.status = 'ACTIVE'")
     List<EventAdminAssignment> findActiveByEventForUpdate(@Param("eventId") UUID eventId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from EventAdminAssignment a where a.event.eventId = :eventId")
+    void deleteByEventId(@Param("eventId") UUID eventId);
 }

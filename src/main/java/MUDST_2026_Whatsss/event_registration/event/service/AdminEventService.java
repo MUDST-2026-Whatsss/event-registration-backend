@@ -27,6 +27,7 @@ import MUDST_2026_Whatsss.event_registration.event.web.dto.CancelEventRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestCreateRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventWriteRequest;
+import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
 import MUDST_2026_Whatsss.event_registration.storage.service.EventImageService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,6 +59,7 @@ public class AdminEventService {
     private final AuthUserRepository userRepository;
     private final EventMapper mapper;
     private final ObjectMapper objectMapper;
+    private final RegistrationService registrationService;
 
     public AdminEventService(
             EventRepository eventRepository,
@@ -69,7 +71,8 @@ public class AdminEventService {
             AuditLogRepository auditRepository,
             AuthUserRepository userRepository,
             EventMapper mapper,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            RegistrationService registrationService) {
         this.eventRepository = eventRepository;
         this.categoryRepository = categoryRepository;
         this.assignmentRepository = assignmentRepository;
@@ -80,6 +83,7 @@ public class AdminEventService {
         this.userRepository = userRepository;
         this.mapper = mapper;
         this.objectMapper = objectMapper;
+        this.registrationService = registrationService;
     }
 
     @Transactional(readOnly = true)
@@ -210,9 +214,30 @@ public class AdminEventService {
         event.setCancelledAt(Instant.now());
         event.setCancellationReason(request.reason().trim());
         event = eventRepository.saveAndFlush(event);
+        registrationService.cancelAllForEvent(event, principal.userId(), event.getCancellationReason());
         audit(actor(event, principal), "EVENT_CANCELLED", event,
                 Map.of("reason", event.getCancellationReason(), "version", event.getVersion()));
         return toResponse(event);
+    }
+
+    /**
+     * Hard-deletes an event that was never published. Published events may hold registrations,
+     * so they are cancelled instead to keep participant history intact.
+     */
+    @Transactional
+    public void delete(UUID eventId, long expectedVersion, AuthenticatedUser principal) {
+        Event event = locked(eventId, principal);
+        requireVersion(event, expectedVersion);
+        if (event.getStatus() != EventStatus.DRAFT && event.getStatus() != EventStatus.REJECTED) {
+            throw new ApiException(ErrorCode.INVALID_EVENT_STATE,
+                    "Only draft or rejected events can be deleted. Cancel a published event instead.");
+        }
+        // The audit row outlives the event: target_id is not a foreign key.
+        audit(actor(event, principal), "EVENT_DELETED", event, Map.of("status", event.getStatus().name()));
+        // Bulk deletes clear the persistence context, so the event row goes the same way.
+        reviewRepository.deleteByEventId(eventId);
+        assignmentRepository.deleteByEventId(eventId);
+        eventRepository.deleteByEventId(eventId);
     }
 
     @Transactional(readOnly = true)

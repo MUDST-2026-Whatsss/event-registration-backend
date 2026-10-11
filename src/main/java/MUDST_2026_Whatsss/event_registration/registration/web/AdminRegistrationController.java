@@ -1,0 +1,41 @@
+package MUDST_2026_Whatsss.event_registration.registration.web;
+
+import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
+import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
+
+/** Participant list for an event, scoped to the event's assigned administrators. */
+@RestController
+@RequestMapping("/api/v1/admin/events/{eventId}/registrations")
+@PreAuthorize("hasAuthority('REGISTRATION_VIEW_ALL') or hasRole('SUPER_ADMIN')")
+public class AdminRegistrationController {
+
+    private final RegistrationService service;
+
+    public AdminRegistrationController(RegistrationService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public Page<AdminRegistrationResponse> list(
+            @PathVariable UUID eventId,
+            @RequestParam(defaultValue = "") String query,
+            @PageableDefault(size = 50, sort = "registeredAt", direction = Sort.Direction.ASC)
+            Pageable pageable,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.listForEvent(eventId, query, pageable, user);
+    }
+}
