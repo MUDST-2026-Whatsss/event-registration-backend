@@ -14,6 +14,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.CascadeType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +27,8 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Current persistence model for the PostgreSQL {@code events} table. */
 @Entity
@@ -35,6 +39,10 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class Event {
+
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<EventInvitation> invitations = new ArrayList<>();
 
     @Id
     @GeneratedValue
@@ -71,7 +79,7 @@ public class Event {
     @Builder.Default
     private EventType eventType = EventType.FREE;
 
-    @Column(name = "price", nullable = false, precision = 12, scale = 2)
+    @Column(name = "price", precision = 12, scale = 2)
     @Builder.Default
     private BigDecimal price = BigDecimal.ZERO;
 
@@ -104,23 +112,23 @@ public class Event {
     @Builder.Default
     private String timezone = "Asia/Bangkok";
 
-    @Column(name = "start_at", nullable = false)
+    @Column(name = "start_at")
     private Instant startAt;
 
-    @Column(name = "end_at", nullable = false)
+    @Column(name = "end_at")
     private Instant endAt;
 
-    @Column(name = "registration_start_at", nullable = false)
+    @Column(name = "registration_start_at")
     private Instant registrationStartAt;
 
-    @Column(name = "registration_end_at", nullable = false)
+    @Column(name = "registration_end_at")
     private Instant registrationEndAt;
 
     @Column(name = "cancellation_deadline_at")
     private Instant cancellationDeadlineAt;
 
-    @Column(name = "maximum_participants", nullable = false)
-    private int maximumParticipants;
+    @Column(name = "maximum_participants")
+    private Integer maximumParticipants;
 
     @Column(name = "published_at")
     private Instant publishedAt;

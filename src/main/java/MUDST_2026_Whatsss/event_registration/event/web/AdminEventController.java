@@ -9,6 +9,7 @@ import MUDST_2026_Whatsss.event_registration.event.web.dto.CancelEventRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestCreateRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventWriteRequest;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.EventInviteeResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -56,6 +58,12 @@ public class AdminEventController {
         return service.stats(user);
     }
 
+    @GetMapping("/invitees/lookup")
+    @PreAuthorize("hasAuthority('EVENT_CREATE') or hasRole('SUPER_ADMIN')")
+    public EventInviteeResponse findInvitee(@RequestParam String email) {
+        return service.findInvitee(email);
+    }
+
     @GetMapping("/{eventId}")
     public AdminEventResponse get(
             @PathVariable UUID eventId,
@@ -67,7 +75,7 @@ public class AdminEventController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('EVENT_CREATE') or hasRole('SUPER_ADMIN')")
     public AdminEventResponse create(
-            @Valid @RequestBody EventWriteRequest request,
+            @Validated(EventWriteRequest.Draft.class) @RequestBody EventWriteRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.create(request, user);
     }
@@ -77,7 +85,7 @@ public class AdminEventController {
     public AdminEventResponse update(
             @PathVariable UUID eventId,
             @RequestParam long version,
-            @Valid @RequestBody EventWriteRequest request,
+            @Validated(EventWriteRequest.Draft.class) @RequestBody EventWriteRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.update(eventId, version, request, user);
     }

@@ -7,6 +7,7 @@ import MUDST_2026_Whatsss.event_registration.event.domain.LocationType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
 
 public record AdminEventResponse(
         UUID eventId,
@@ -32,7 +33,7 @@ public record AdminEventResponse(
         Instant registrationStartAt,
         Instant registrationEndAt,
         Instant cancellationDeadlineAt,
-        int maximumParticipants,
+        Integer maximumParticipants,
         long registrationCount,
         String rules,
         String contactEmail,
@@ -42,5 +43,6 @@ public record AdminEventResponse(
         String cancellationReason,
         Instant createdAt,
         Instant updatedAt,
-        long version) {
+        long version,
+        List<EventInviteeResponse> invitedUsers) {
 }

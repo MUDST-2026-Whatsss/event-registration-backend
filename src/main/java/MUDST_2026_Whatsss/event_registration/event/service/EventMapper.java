@@ -6,6 +6,7 @@ import MUDST_2026_Whatsss.event_registration.event.web.dto.EventCategoryResponse
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventDetailResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventSummaryResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.AdminEventResponse;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.EventInviteeResponse;
 import MUDST_2026_Whatsss.event_registration.storage.service.MediaUrlResolver;
 import org.springframework.stereotype.Component;
 
@@ -120,7 +121,11 @@ public class EventMapper {
                 event.getCancellationReason(),
                 event.getCreatedAt(),
                 event.getUpdatedAt(),
-                event.getVersion());
+                event.getVersion(),
+                event.getInvitations().stream()
+                        .map(invitation -> new EventInviteeResponse(
+                                invitation.getUser().getUserId(), invitation.getUser().getEmail()))
+                        .toList());
     }
 
     /** Null when the organiser hides the count; never negative if capacity was lowered later. */

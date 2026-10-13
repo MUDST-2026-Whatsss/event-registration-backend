@@ -4,6 +4,7 @@ import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventInvitationResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,6 +49,12 @@ public class RegistrationController {
     @PreAuthorize("hasAuthority('REGISTRATION_READ_SELF')")
     public List<RegistrationResponse> mine(@AuthenticationPrincipal AuthenticatedUser user) {
         return service.mine(user);
+    }
+
+    @GetMapping("/invitations")
+    @PreAuthorize("hasAuthority('REGISTRATION_READ_SELF')")
+    public List<EventInvitationResponse> invitations(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.invitations(user);
     }
 
     @GetMapping("/registrations/{registrationId}")

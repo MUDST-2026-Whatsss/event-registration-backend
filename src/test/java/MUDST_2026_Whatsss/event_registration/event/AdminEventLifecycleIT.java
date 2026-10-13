@@ -18,6 +18,8 @@ import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestCre
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventWriteRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.ReviewDecisionRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.ReplaceEventAdminsRequest;
+import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.validation.ConstraintViolationException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -33,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -46,6 +50,7 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
     @Autowired private EventChangeRequestRepository changeRequestRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private SuperAdminEventService superAdminService;
+    @Autowired private RegistrationService registrationService;
 
     private UUID adminId;
     private AuthenticatedUser principal;
@@ -67,6 +72,73 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
         superAdmin = new AuthenticatedUser(
                 superAdminId, "super@example.test", "SUPER_ADMIN", List.of("SUPER_ADMIN"),
                 List.of());
+    }
+
+    @Test
+    void invitationsArePrivateUntilPublicationAndDoNotReserveSeats() {
+        UUID inviteeId = UUID.randomUUID();
+        jdbcTemplate.update("insert into auth_users (user_id, email, password_hash, status) values (?, ?, ?, ?)",
+                inviteeId, "invitee-" + inviteeId + "@example.test", "test-hash", "ACTIVE");
+        var invitee = new AuthenticatedUser(inviteeId, "invitee-" + inviteeId + "@example.test", "USER",
+                List.of("USER"), List.of("REGISTRATION_CREATE_SELF", "REGISTRATION_READ_SELF"));
+        var draft = service.create(withInvitees(validRequest("Invited event"), List.of(inviteeId)), principal);
+        assertThat(draft.invitedUsers()).extracting(user -> user.userId()).containsExactly(inviteeId);
+        assertThat(service.get(draft.eventId(), principal).invitedUsers()).hasSize(1);
+        assertThat(registrationService.invitations(invitee)).isEmpty();
+        assertThat(eventRepository.countActiveRegistrations(draft.eventId())).isZero();
+
+        var submitted = service.submit(draft.eventId(), draft.version(), principal);
+        var review = reviewRepository.findByEvent_EventIdAndDecision(draft.eventId(), EventReview.PENDING).orElseThrow();
+        superAdminService.approveReview(review.getReviewId(),
+                new ReviewDecisionRequest(submitted.version(), "Ready"), superAdmin);
+
+        assertThat(registrationService.invitations(invitee)).hasSize(1);
+        assertThat(registrationService.invitations(principal)).isEmpty();
+        assertThat(eventRepository.countActiveRegistrations(draft.eventId())).isZero();
+        registrationService.register(draft.eventId(), new CreateRegistrationRequest(null, null, null, true), invitee);
+        assertThat(eventRepository.countActiveRegistrations(draft.eventId())).isEqualTo(1);
+        assertThat(registrationService.invitations(invitee)).isEmpty();
+    }
+
+    private EventWriteRequest withInvitees(EventWriteRequest request, List<UUID> invitedUserIds) {
+        return new EventWriteRequest(request.title(), request.summary(), request.description(), request.eventCategoryId(),
+                request.eventType(), request.price(), request.currency(), request.refundPolicy(), request.locationType(),
+                request.locationName(), request.address(), request.onlineUrl(), request.imageObjectKey(), request.timezone(),
+                request.startAt(), request.endAt(), request.registrationStartAt(), request.registrationEndAt(),
+                request.cancellationDeadlineAt(), request.maximumParticipants(), request.rules(), request.contactEmail(),
+                request.eligibility(), request.allowCancellation(), request.showRemainingSeats(), invitedUserIds);
+    }
+
+    @Test
+    void partialDraftCanBeSavedAndCompletedBeforeReview() {
+        var draft = service.create(partialRequest("Unfinished event"), principal);
+        assertThat(draft.category()).isNull();
+        assertThat(draft.startAt()).isNull();
+        assertThat(draft.maximumParticipants()).isNull();
+        assertThat(service.get(draft.eventId(), principal).title()).isEqualTo("Unfinished event");
+        assertThat(service.stats(principal).categories().stream().mapToLong(item -> item.total()).sum()).isEqualTo(1);
+
+        var completed = service.update(draft.eventId(), draft.version(),
+                validRequest("Unfinished event"), principal);
+        assertThat(service.submit(completed.eventId(), completed.version(), principal).status())
+                .isEqualTo(EventStatus.PENDING_REVIEW);
+    }
+
+    @Test
+    void incompleteDraftCannotEnterReviewOrBecomePublic() {
+        var draft = service.create(partialRequest("Private unfinished event"), principal);
+        assertThatThrownBy(() -> service.submit(draft.eventId(), draft.version(), principal))
+                .isInstanceOfSatisfying(ConstraintViolationException.class, exception ->
+                        assertThat(exception.getConstraintViolations())
+                                .anyMatch(violation -> violation.getPropertyPath().toString().equals("startAt")));
+        assertThat(eventRepository.findById(draft.eventId()).orElseThrow().getStatus()).isEqualTo(EventStatus.DRAFT);
+        assertThat(reviewRepository.findByEvent_EventIdAndDecision(draft.eventId(), EventReview.PENDING)).isEmpty();
+    }
+
+    private EventWriteRequest partialRequest(String title) {
+        return new EventWriteRequest(title, null, null, null, EventType.FREE, BigDecimal.ZERO,
+                "THB", null, LocationType.ONSITE, null, null, null, null, "Asia/Bangkok",
+                null, null, null, null, null, null, null, null, null, false, true);
     }
 
     @Test
