@@ -80,32 +80,34 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
             Pageable pageable);
 
     @Query("""
-            select e.category.eventCategoryId as eventCategoryId,
-                   e.category.code as code,
-                   e.category.nameTh as nameTh,
-                   e.category.nameEn as nameEn,
+            select c.eventCategoryId as eventCategoryId,
+                   c.code as code,
+                   c.nameTh as nameTh,
+                   c.nameEn as nameEn,
                    e.status as status,
                    count(e.eventId) as eventCount
             from Event e
-            group by e.category.eventCategoryId, e.category.code, e.category.nameTh,
-                     e.category.nameEn, e.category.displayOrder, e.status
-            order by e.category.displayOrder, e.category.nameEn, e.status
+            left join e.category c
+            group by c.eventCategoryId, c.code, c.nameTh,
+                     c.nameEn, c.displayOrder, e.status
+            order by c.displayOrder, c.nameEn, e.status
             """)
     List<EventCategoryStatusCount> countAllByCategoryAndStatus();
 
     @Query("""
-            select e.category.eventCategoryId as eventCategoryId,
-                   e.category.code as code,
-                   e.category.nameTh as nameTh,
-                   e.category.nameEn as nameEn,
+            select c.eventCategoryId as eventCategoryId,
+                   c.code as code,
+                   c.nameTh as nameTh,
+                   c.nameEn as nameEn,
                    e.status as status,
                    count(distinct e.eventId) as eventCount
             from Event e
+            left join e.category c
             join EventAdminAssignment a on a.event = e
             where a.adminUser.userId = :userId and a.status = 'ACTIVE'
-            group by e.category.eventCategoryId, e.category.code, e.category.nameTh,
-                     e.category.nameEn, e.category.displayOrder, e.status
-            order by e.category.displayOrder, e.category.nameEn, e.status
+            group by c.eventCategoryId, c.code, c.nameTh,
+                     c.nameEn, c.displayOrder, e.status
+            order by c.displayOrder, c.nameEn, e.status
             """)
     List<EventCategoryStatusCount> countAssignedByCategoryAndStatus(@Param("userId") UUID userId);
 

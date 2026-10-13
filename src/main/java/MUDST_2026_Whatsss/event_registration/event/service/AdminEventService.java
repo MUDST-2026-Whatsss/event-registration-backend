@@ -1,6 +1,9 @@
 package MUDST_2026_Whatsss.event_registration.event.service;
 
 import MUDST_2026_Whatsss.event_registration.auth.domain.AuthUser;
+import MUDST_2026_Whatsss.event_registration.auth.domain.UserStatus;
+import MUDST_2026_Whatsss.event_registration.event.domain.EventInvitation;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.EventInviteeResponse;
 import MUDST_2026_Whatsss.event_registration.auth.repository.AuthUserRepository;
 import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.auth.security.RoleCodes;
@@ -32,6 +35,8 @@ import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationSe
 import MUDST_2026_Whatsss.event_registration.storage.service.EventImageService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -46,6 +51,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.HashSet;
 
 @Service
 public class AdminEventService {
@@ -61,6 +67,7 @@ public class AdminEventService {
     private final EventMapper mapper;
     private final ObjectMapper objectMapper;
     private final RegistrationService registrationService;
+    private final Validator validator;
 
     public AdminEventService(
             EventRepository eventRepository,
@@ -73,7 +80,8 @@ public class AdminEventService {
             AuthUserRepository userRepository,
             EventMapper mapper,
             ObjectMapper objectMapper,
-            RegistrationService registrationService) {
+            RegistrationService registrationService,
+            Validator validator) {
         this.eventRepository = eventRepository;
         this.categoryRepository = categoryRepository;
         this.assignmentRepository = assignmentRepository;
@@ -85,6 +93,7 @@ public class AdminEventService {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
         this.registrationService = registrationService;
+        this.validator = validator;
     }
 
     @Transactional(readOnly = true)
@@ -178,8 +187,18 @@ public class AdminEventService {
         return toResponse(event);
     }
 
+    @Transactional(readOnly = true)
+    public EventInviteeResponse findInvitee(String email) {
+        AuthUser user = userRepository.findByNormalizedEmail(email.trim().toLowerCase(Locale.ROOT))
+                .filter(candidate -> candidate.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_FAILED,
+                        "No active account was found for this email."));
+        return new EventInviteeResponse(user.getUserId(), user.getEmail());
+    }
+
     @Transactional
     public AdminEventResponse create(EventWriteRequest request, AuthenticatedUser principal) {
+        validate(request, EventWriteRequest.Draft.class);
         AuthUser actor = userRepository.findById(principal.userId())
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED));
         Event event = Event.builder()
@@ -210,6 +229,7 @@ public class AdminEventService {
             throw new ApiException(ErrorCode.INVALID_EVENT_STATE,
                     "Only draft or rejected events can be edited directly.");
         }
+        validate(request, EventWriteRequest.Draft.class);
         apply(event, request, principal, false);
         event = eventRepository.saveAndFlush(event);
         audit(actor(event, principal), "EVENT_UPDATED", event, Map.of("version", event.getVersion()));
@@ -227,6 +247,16 @@ public class AdminEventService {
         if (reviewRepository.findByEvent_EventIdAndDecision(eventId, EventReview.PENDING).isPresent()) {
             throw new ApiException(ErrorCode.INVALID_EVENT_STATE, "This event is already awaiting review.");
         }
+
+        validate(new EventWriteRequest(
+                event.getTitle(), event.getSummary(), event.getDescription(),
+                event.getCategory() == null ? null : event.getCategory().getEventCategoryId(),
+                event.getEventType(), event.getPrice(), event.getCurrency().trim(), event.getRefundPolicy(),
+                event.getLocationType(), event.getLocationName(), event.getAddress(), event.getOnlineUrl(),
+                event.getImageObjectKey(), event.getTimezone(), event.getStartAt(), event.getEndAt(),
+                event.getRegistrationStartAt(), event.getRegistrationEndAt(), event.getCancellationDeadlineAt(),
+                event.getMaximumParticipants(), event.getRules(), event.getContactEmail(), event.getEligibility(),
+                event.isAllowCancellation(), event.isShowRemainingSeats()));
 
         event.setStatus(EventStatus.PENDING_REVIEW);
         event = eventRepository.saveAndFlush(event);
@@ -411,7 +441,7 @@ public class AdminEventService {
 
     private void apply(
             Event event, EventWriteRequest request, AuthenticatedUser principal, boolean creating) {
-        EventCategory category = categoryRepository.findById(request.eventCategoryId())
+        EventCategory category = request.eventCategoryId() == null ? null : categoryRepository.findById(request.eventCategoryId())
                 .filter(EventCategory::isActive)
                 .orElseThrow(() -> new ApiException(ErrorCode.EVENT_CATEGORY_NOT_FOUND));
 
@@ -445,6 +475,27 @@ public class AdminEventService {
         event.setEligibility(blankToNull(request.eligibility()));
         event.setAllowCancellation(request.allowCancellation());
         event.setShowRemainingSeats(request.showRemainingSeats());
+        if (request.invitedUserIds() != null) {
+            var selectedIds = new HashSet<>(request.invitedUserIds());
+            var users = userRepository.findAllById(selectedIds);
+            if (users.size() != selectedIds.size() || users.stream().anyMatch(user -> user.getStatus() != UserStatus.ACTIVE)) {
+                throw new ApiException(ErrorCode.VALIDATION_FAILED, "Invitees must have active user accounts.");
+            }
+            event.getInvitations().removeIf(invitation -> !selectedIds.contains(invitation.getUser().getUserId()));
+            var existingIds = event.getInvitations().stream().map(invitation -> invitation.getUser().getUserId()).toList();
+            for (AuthUser user : users) {
+                if (!existingIds.contains(user.getUserId())) {
+                    event.getInvitations().add(EventInvitation.builder().event(event).user(user).build());
+                }
+            }
+        }
+    }
+
+    private void validate(EventWriteRequest request, Class<?>... groups) {
+        var violations = validator.validate(request, groups);
+        if (!violations.isEmpty()) {
+            throw new ConstraintViolationException(violations);
+        }
     }
 
     private void requireOwnedImage(String objectKey, AuthenticatedUser principal) {

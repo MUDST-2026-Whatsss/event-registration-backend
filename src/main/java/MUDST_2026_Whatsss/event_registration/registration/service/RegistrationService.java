@@ -12,6 +12,8 @@ import MUDST_2026_Whatsss.event_registration.event.domain.EventStatus;
 import MUDST_2026_Whatsss.event_registration.event.domain.EventType;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventAdminAssignmentRepository;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
+import MUDST_2026_Whatsss.event_registration.event.repository.EventInvitationRepository;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventInvitationResponse;
 import MUDST_2026_Whatsss.event_registration.event.service.EventMapper;
 import MUDST_2026_Whatsss.event_registration.event.service.EventNotFoundException;
 import MUDST_2026_Whatsss.event_registration.registration.domain.Registration;
@@ -53,6 +55,7 @@ public class RegistrationService {
     private final EventAdminAssignmentRepository assignmentRepository;
     private final ParticipantRepository participantRepository;
     private final EventMapper eventMapper;
+    private final EventInvitationRepository invitationRepository;
 
     public RegistrationService(
             RegistrationRepository registrationRepository,
@@ -60,13 +63,15 @@ public class RegistrationService {
             EventRepository eventRepository,
             EventAdminAssignmentRepository assignmentRepository,
             ParticipantRepository participantRepository,
-            EventMapper eventMapper) {
+            EventMapper eventMapper,
+            EventInvitationRepository invitationRepository) {
         this.registrationRepository = registrationRepository;
         this.historyRepository = historyRepository;
         this.eventRepository = eventRepository;
         this.assignmentRepository = assignmentRepository;
         this.participantRepository = participantRepository;
         this.eventMapper = eventMapper;
+        this.invitationRepository = invitationRepository;
     }
 
     @Transactional
@@ -114,6 +119,9 @@ public class RegistrationService {
         registration.setCancellationReason(null);
         registration = registrationRepository.saveAndFlush(registration);
 
+        invitationRepository.findByEvent_EventIdAndUser_UserId(eventId, principal.userId())
+                .ifPresent(invitation -> invitation.setAcceptedAt(now));
+
         recordTransition(registration, previous, principal.userId(), null);
         return toResponse(registration, now);
     }
@@ -126,6 +134,15 @@ public class RegistrationService {
                 .orElse(List.of())
                 .stream()
                 .map(registration -> toResponse(registration, now))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<EventInvitationResponse> invitations(AuthenticatedUser principal) {
+        return invitationRepository.findVisibleForUser(principal.userId(), Instant.now()).stream()
+                .map(invitation -> new EventInvitationResponse(invitation.getInvitationId(),
+                        eventMapper.toSummaryResponse(invitation.getEvent(),
+                                eventRepository.countActiveRegistrations(invitation.getEvent().getEventId()))))
                 .toList();
     }
 
