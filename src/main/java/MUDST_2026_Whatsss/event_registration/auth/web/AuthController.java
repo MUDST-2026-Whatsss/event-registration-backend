@@ -138,8 +138,11 @@ public class AuthController {
      * client that has lost its cookies still needs the browser state cleared.
      */
     @PostMapping("/logout")
-    public ResponseEntity<MessageResponse> logout(HttpServletRequest httpRequest) {
-        cookieService.readRefreshToken(httpRequest).ifPresent(authService::logout);
+    public ResponseEntity<MessageResponse> logout(
+            HttpServletRequest httpRequest,
+            @AuthenticationPrincipal AuthenticatedUser principal) {
+        cookieService.readRefreshToken(httpRequest).ifPresent(token ->
+                authService.logout(token, principal == null ? null : principal.userId()));
 
         HttpHeaders headers = new HttpHeaders();
         cookieService.addCookie(headers, cookieService.clearAccessTokenCookie());

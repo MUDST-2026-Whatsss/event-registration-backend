@@ -19,6 +19,7 @@ import MUDST_2026_Whatsss.event_registration.registration.domain.RegistrationSta
 import MUDST_2026_Whatsss.event_registration.registration.domain.RegistrationStatusHistory;
 import MUDST_2026_Whatsss.event_registration.registration.repository.RegistrationRepository;
 import MUDST_2026_Whatsss.event_registration.registration.repository.RegistrationStatusHistoryRepository;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
@@ -173,6 +174,15 @@ public class RegistrationService {
                 .map(RegistrationService::toAdminResponse);
     }
 
+    @Transactional(readOnly = true)
+    public Page<AdminRecentRegistrationResponse> listRecent(
+            Pageable pageable, AuthenticatedUser principal) {
+        Page<Registration> registrations = principal.hasRole(RoleCodes.SUPER_ADMIN)
+                ? registrationRepository.findRecent(pageable)
+                : registrationRepository.findRecentForAssignedEvents(principal.userId(), pageable);
+        return registrations.map(RegistrationService::toRecentResponse);
+    }
+
     private Registration owned(UUID registrationId, AuthenticatedUser principal) {
         UUID participantId = participantRepository.findByUserId(principal.userId())
                 .map(Participant::getParticipantId)
@@ -257,6 +267,19 @@ public class RegistrationService {
                 registration.getCancelledAt(),
                 registration.getCancellationReason(),
                 registration.getCheckedInAt());
+    }
+
+    private static AdminRecentRegistrationResponse toRecentResponse(Registration registration) {
+        Event event = registration.getEvent();
+        return new AdminRecentRegistrationResponse(
+                registration.getRegistrationId(),
+                event.getEventId(),
+                event.getTitle(),
+                registration.getRegistrationNumber(),
+                registration.getStatus(),
+                registration.getAttendeeName(),
+                registration.getAttendeeEmail(),
+                registration.getRegisteredAt());
     }
 
     private String newRegistrationNumber() {

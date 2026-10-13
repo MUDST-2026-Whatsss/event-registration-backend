@@ -56,11 +56,13 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
             join EventAdminAssignment a on a.event = e
             where a.adminUser.userId = :userId and a.status = 'ACTIVE'
               and (:status is null or e.status = :status)
+              and (:eventCategoryId is null or e.category.eventCategoryId = :eventCategoryId)
               and (:query = '' or lower(e.title) like lower(concat('%', :query, '%')))
             """)
     Page<Event> findAssignedToFiltered(
             @Param("userId") UUID userId,
             @Param("status") EventStatus status,
+            @Param("eventCategoryId") UUID eventCategoryId,
             @Param("query") String query,
             Pageable pageable);
 
@@ -68,12 +70,53 @@ public interface EventRepository extends JpaRepository<Event, UUID>, JpaSpecific
     @Query("""
             select e from Event e
             where (:status is null or e.status = :status)
+              and (:eventCategoryId is null or e.category.eventCategoryId = :eventCategoryId)
               and (:query = '' or lower(e.title) like lower(concat('%', :query, '%')))
             """)
     Page<Event> findAllFiltered(
             @Param("status") EventStatus status,
+            @Param("eventCategoryId") UUID eventCategoryId,
             @Param("query") String query,
             Pageable pageable);
+
+    @Query("""
+            select e.category.eventCategoryId as eventCategoryId,
+                   e.category.code as code,
+                   e.category.nameTh as nameTh,
+                   e.category.nameEn as nameEn,
+                   e.status as status,
+                   count(e.eventId) as eventCount
+            from Event e
+            group by e.category.eventCategoryId, e.category.code, e.category.nameTh,
+                     e.category.nameEn, e.category.displayOrder, e.status
+            order by e.category.displayOrder, e.category.nameEn, e.status
+            """)
+    List<EventCategoryStatusCount> countAllByCategoryAndStatus();
+
+    @Query("""
+            select e.category.eventCategoryId as eventCategoryId,
+                   e.category.code as code,
+                   e.category.nameTh as nameTh,
+                   e.category.nameEn as nameEn,
+                   e.status as status,
+                   count(distinct e.eventId) as eventCount
+            from Event e
+            join EventAdminAssignment a on a.event = e
+            where a.adminUser.userId = :userId and a.status = 'ACTIVE'
+            group by e.category.eventCategoryId, e.category.code, e.category.nameTh,
+                     e.category.nameEn, e.category.displayOrder, e.status
+            order by e.category.displayOrder, e.category.nameEn, e.status
+            """)
+    List<EventCategoryStatusCount> countAssignedByCategoryAndStatus(@Param("userId") UUID userId);
+
+    interface EventCategoryStatusCount {
+        UUID getEventCategoryId();
+        String getCode();
+        String getNameTh();
+        String getNameEn();
+        EventStatus getStatus();
+        long getEventCount();
+    }
 
     long countByStatus(EventStatus status);
 

@@ -27,6 +27,14 @@ public interface EventChangeRequestRepository extends JpaRepository<EventChangeR
     Page<EventChangeRequest> findAll(Pageable pageable);
 
     @EntityGraph(attributePaths = {"event", "event.category", "requestedBy", "reviewedBy"})
+    Page<EventChangeRequest> findByEvent_TitleContainingIgnoreCaseOrRequestedBy_EmailContainingIgnoreCase(
+            String title, String email, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"event", "event.category", "requestedBy", "reviewedBy"})
+    Page<EventChangeRequest> findByStatusAndEvent_TitleContainingIgnoreCaseOrStatusAndRequestedBy_EmailContainingIgnoreCase(
+            String titleStatus, String title, String emailStatus, String email, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"event", "event.category", "requestedBy", "reviewedBy"})
     @Query("select r from EventChangeRequest r where r.eventChangeRequestId = :requestId")
     java.util.Optional<EventChangeRequest> findDetailById(@Param("requestId") UUID requestId);
 

@@ -59,15 +59,20 @@ class AdminAccessControlIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void finalActiveSuperAdminCannotBeDisabled() {
-        UUID superAdminId = insertUser("last-super", false);
+    void superAdminCannotBeDisabledEvenWhenAnotherSuperAdminIsActive() {
+        UUID superAdminId = insertUser("protected-super", false);
         assignRole(superAdminId, "SUPER_ADMIN");
+        UUID anotherSuperAdminId = insertUser("another-super", false);
+        assignRole(anotherSuperAdminId, "SUPER_ADMIN");
 
         assertThatThrownBy(() -> userService.updateStatus(
                 superAdminId, new UpdateUserStatusRequest(UserStatus.DISABLED, 0L), principal))
                 .isInstanceOfSatisfying(ApiException.class,
-                        exception -> assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_USER_STATE));
+                        exception -> {
+                            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_USER_STATE);
+                            assertThat(exception.getMessage())
+                                    .isEqualTo("Super administrator accounts cannot be disabled.");
+                        });
     }
 
     @Test

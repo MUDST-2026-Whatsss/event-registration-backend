@@ -169,6 +169,29 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void filtersAssignedEventsAndBuildsStatsByCategory() {
+        UUID technologyId = categoryRepository.findByCodeAndActiveTrue("TECHNOLOGY")
+                .orElseThrow().getEventCategoryId();
+        UUID designId = categoryRepository.findByCodeAndActiveTrue("DESIGN")
+                .orElseThrow().getEventCategoryId();
+        var technology = service.create(validRequest("Technology event"), principal);
+        service.create(withCategory(validRequest("Design event"), designId), principal);
+
+        assertThat(service.list(
+                principal, null, technologyId, "", PageRequest.of(0, 20)))
+                .extracting(item -> item.eventId())
+                .containsExactly(technology.eventId());
+
+        var categoryStats = service.stats(principal).categories();
+        assertThat(categoryStats).extracting(item -> item.code())
+                .containsExactly("TECHNOLOGY", "DESIGN");
+        assertThat(categoryStats).allSatisfy(category -> {
+            assertThat(category.total()).isEqualTo(1);
+            assertThat(category.draft()).isEqualTo(1);
+        });
+    }
+
+    @Test
     void superAdminApprovesChangeRequestAndAppliesStoredDiff() {
         EventWriteRequest original = validRequest("Before approved change");
         var created = service.create(original, principal);
@@ -252,6 +275,18 @@ class AdminEventLifecycleIT extends PostgresIntegrationTest {
     private EventWriteRequest withTitle(EventWriteRequest request, String title) {
         return new EventWriteRequest(
                 title, request.summary(), request.description(), request.eventCategoryId(),
+                request.eventType(), request.price(), request.currency(), request.refundPolicy(),
+                request.locationType(), request.locationName(), request.address(), request.onlineUrl(),
+                request.imageObjectKey(), request.timezone(), request.startAt(), request.endAt(),
+                request.registrationStartAt(), request.registrationEndAt(),
+                request.cancellationDeadlineAt(), request.maximumParticipants(), request.rules(),
+                request.contactEmail(), request.eligibility(), request.allowCancellation(),
+                request.showRemainingSeats());
+    }
+
+    private EventWriteRequest withCategory(EventWriteRequest request, UUID eventCategoryId) {
+        return new EventWriteRequest(
+                request.title(), request.summary(), request.description(), eventCategoryId,
                 request.eventType(), request.price(), request.currency(), request.refundPolicy(),
                 request.locationType(), request.locationName(), request.address(), request.onlineUrl(),
                 request.imageObjectKey(), request.timezone(), request.startAt(), request.endAt(),

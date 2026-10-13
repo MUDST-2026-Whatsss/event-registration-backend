@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -65,6 +66,7 @@ public class AuthService {
     private final RateLimiterService rateLimiter;
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties properties;
+    private final SecurityAuditService securityAuditService;
 
     public AuthService(AuthUserRepository userRepository,
                        ParticipantRepository participantRepository,
@@ -74,7 +76,8 @@ public class AuthService {
                        FailedLoginService failedLoginService,
                        RateLimiterService rateLimiter,
                        PasswordEncoder passwordEncoder,
-                       AuthProperties properties) {
+                       AuthProperties properties,
+                       SecurityAuditService securityAuditService) {
         this.userRepository = userRepository;
         this.participantRepository = participantRepository;
         this.roleRepository = roleRepository;
@@ -84,6 +87,7 @@ public class AuthService {
         this.rateLimiter = rateLimiter;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
+        this.securityAuditService = securityAuditService;
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
@@ -133,6 +137,7 @@ public class AuthService {
                 .updatedAt(now)
                 .build());
 
+        securityAuditService.record(user, "ACCOUNT_REGISTERED", user, Map.of());
         log.info("Registered account {}", user.getUserId());
         return UserResponse.from(user, participant);
     }
@@ -273,7 +278,9 @@ public class AuthService {
         }
         participant.setUpdatedAt(now);
 
-        return scopedUser(user, participantRepository.save(participant), activeRole);
+        Participant saved = participantRepository.save(participant);
+        securityAuditService.record(user, "PROFILE_UPDATED", user, Map.of());
+        return scopedUser(user, saved, activeRole);
     }
 
     private static UserResponse scopedUser(
@@ -307,6 +314,7 @@ public class AuthService {
         userRepository.save(user);
 
         int revoked = sessionService.revokeAllForUser(userId, SessionService.REASON_PASSWORD_CHANGED);
+        securityAuditService.record(user, "PASSWORD_CHANGED", user, Map.of("revokedSessions", revoked));
         log.info("Password changed for {}; revoked {} session(s)", userId, revoked);
     }
 
@@ -314,6 +322,15 @@ public class AuthService {
     public void logout(String rawRefreshToken) {
         if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
             sessionService.revokeByRawToken(rawRefreshToken);
+        }
+    }
+
+    @Transactional
+    public void logout(String rawRefreshToken, UUID userId) {
+        logout(rawRefreshToken);
+        if (userId != null) {
+            userRepository.findById(userId).ifPresent(user ->
+                    securityAuditService.record(user, "LOGOUT", user, Map.of()));
         }
     }
 

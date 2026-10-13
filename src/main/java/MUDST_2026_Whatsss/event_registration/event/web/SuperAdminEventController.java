@@ -68,8 +68,9 @@ public class SuperAdminEventController {
     @GetMapping("/change-requests")
     public Page<ChangeRequestReviewResponse> changeRequests(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String query,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
-        return service.changeRequests(status, pageable);
+        return service.changeRequests(status, query, pageable);
     }
 
     @GetMapping("/change-requests/{requestId}")

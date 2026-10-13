@@ -44,10 +44,11 @@ public class AdminEventController {
     @GetMapping
     public Page<AdminEventResponse> list(
             @RequestParam(required = false) EventStatus status,
+            @RequestParam(required = false) UUID eventCategoryId,
             @RequestParam(defaultValue = "") String query,
             @PageableDefault(size = 20, sort = "updatedAt") Pageable pageable,
             @AuthenticationPrincipal AuthenticatedUser user) {
-        return service.list(user, status, query, pageable);
+        return service.list(user, status, eventCategoryId, query, pageable);
     }
 
     @GetMapping("/stats")
