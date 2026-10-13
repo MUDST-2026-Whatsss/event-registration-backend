@@ -2,6 +2,7 @@ package MUDST_2026_Whatsss.event_registration.registration.web;
 
 import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,7 +20,7 @@ import java.util.UUID;
 
 /** Participant list for an event, scoped to the event's assigned administrators. */
 @RestController
-@RequestMapping("/api/v1/admin/events/{eventId}/registrations")
+@RequestMapping("/api/v1/admin")
 @PreAuthorize("hasAuthority('REGISTRATION_VIEW_ALL') or hasRole('SUPER_ADMIN')")
 public class AdminRegistrationController {
 
@@ -29,7 +30,7 @@ public class AdminRegistrationController {
         this.service = service;
     }
 
-    @GetMapping
+    @GetMapping("/events/{eventId}/registrations")
     public Page<AdminRegistrationResponse> list(
             @PathVariable UUID eventId,
             @RequestParam(defaultValue = "") String query,
@@ -37,5 +38,13 @@ public class AdminRegistrationController {
             Pageable pageable,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.listForEvent(eventId, query, pageable, user);
+    }
+
+    @GetMapping("/registrations/recent")
+    public Page<AdminRecentRegistrationResponse> recent(
+            @PageableDefault(size = 5, sort = "registeredAt", direction = Sort.Direction.DESC)
+            Pageable pageable,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.listRecent(pageable, user);
     }
 }

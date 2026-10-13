@@ -22,6 +22,7 @@ import MUDST_2026_Whatsss.event_registration.event.repository.EventChangeRequest
 import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventReviewRepository;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.AdminEventResponse;
+import MUDST_2026_Whatsss.event_registration.event.web.dto.AdminEventCategoryStatsResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.AdminEventStatsResponse;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.CancelEventRequest;
 import MUDST_2026_Whatsss.event_registration.event.web.dto.EventChangeRequestCreateRequest;
@@ -88,13 +89,19 @@ public class AdminEventService {
 
     @Transactional(readOnly = true)
     public Page<AdminEventResponse> list(
-            AuthenticatedUser principal, EventStatus status, String query, Pageable pageable) {
+            AuthenticatedUser principal, EventStatus status, UUID eventCategoryId,
+            String query, Pageable pageable) {
         String normalizedQuery = query == null ? "" : query.trim();
         Page<Event> events = principal.hasRole(RoleCodes.SUPER_ADMIN)
-                ? eventRepository.findAllFiltered(status, normalizedQuery, pageable)
+                ? eventRepository.findAllFiltered(status, eventCategoryId, normalizedQuery, pageable)
                 : eventRepository.findAssignedToFiltered(
-                        principal.userId(), status, normalizedQuery, pageable);
+                        principal.userId(), status, eventCategoryId, normalizedQuery, pageable);
         return events.map(this::toResponse);
+    }
+
+    public Page<AdminEventResponse> list(
+            AuthenticatedUser principal, EventStatus status, String query, Pageable pageable) {
+        return list(principal, status, null, query, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -105,7 +112,63 @@ public class AdminEventService {
                 count(principal, EventStatus.PENDING_REVIEW),
                 count(principal, EventStatus.PUBLISHED),
                 count(principal, EventStatus.REJECTED),
-                count(principal, EventStatus.CANCELLED));
+                count(principal, EventStatus.CANCELLED),
+                count(principal, EventStatus.COMPLETED),
+                categoryStats(principal));
+    }
+
+    private List<AdminEventCategoryStatsResponse> categoryStats(AuthenticatedUser principal) {
+        List<EventRepository.EventCategoryStatusCount> rows = principal.hasRole(RoleCodes.SUPER_ADMIN)
+                ? eventRepository.countAllByCategoryAndStatus()
+                : eventRepository.countAssignedByCategoryAndStatus(principal.userId());
+        Map<UUID, CategoryStatsAccumulator> categories = new LinkedHashMap<>();
+        for (EventRepository.EventCategoryStatusCount row : rows) {
+            CategoryStatsAccumulator category = categories.computeIfAbsent(
+                    row.getEventCategoryId(),
+                    ignored -> new CategoryStatsAccumulator(
+                            row.getEventCategoryId(), row.getCode(), row.getNameTh(), row.getNameEn()));
+            category.add(row.getStatus(), row.getEventCount());
+        }
+        return categories.values().stream().map(CategoryStatsAccumulator::toResponse).toList();
+    }
+
+    private static final class CategoryStatsAccumulator {
+        private final UUID eventCategoryId;
+        private final String code;
+        private final String nameTh;
+        private final String nameEn;
+        private long total;
+        private long draft;
+        private long pendingReview;
+        private long published;
+        private long rejected;
+        private long cancelled;
+        private long completed;
+
+        private CategoryStatsAccumulator(UUID eventCategoryId, String code, String nameTh, String nameEn) {
+            this.eventCategoryId = eventCategoryId;
+            this.code = code;
+            this.nameTh = nameTh;
+            this.nameEn = nameEn;
+        }
+
+        private void add(EventStatus status, long count) {
+            total += count;
+            switch (status) {
+                case DRAFT -> draft += count;
+                case PENDING_REVIEW -> pendingReview += count;
+                case PUBLISHED -> published += count;
+                case REJECTED -> rejected += count;
+                case CANCELLED -> cancelled += count;
+                case COMPLETED -> completed += count;
+            }
+        }
+
+        private AdminEventCategoryStatsResponse toResponse() {
+            return new AdminEventCategoryStatsResponse(
+                    eventCategoryId, code, nameTh, nameEn,
+                    total, draft, pendingReview, published, rejected, cancelled, completed);
+        }
     }
 
     @Transactional(readOnly = true)

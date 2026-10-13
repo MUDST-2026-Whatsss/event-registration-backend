@@ -19,7 +19,7 @@ public record UpdateProfileRequest(
         String lastName,
 
         @Pattern(
-                regexp = "^$|^0[\\d\\s-]{8,14}$",
+                regexp = "^$|^0(?:[ -]?\\d){8,9}$",
                 message = "Enter a valid phone number, for example 081-234-5678.")
         @Size(max = 32, message = "Phone number must be at most 32 characters.")
         String phoneNumber) {

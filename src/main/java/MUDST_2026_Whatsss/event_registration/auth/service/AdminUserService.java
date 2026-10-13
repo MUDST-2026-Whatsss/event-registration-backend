@@ -241,20 +241,26 @@ public class AdminUserService {
             throw new ApiException(ErrorCode.INVALID_USER_STATE,
                     "You cannot disable your own account.");
         }
-        if (request.status() != UserStatus.ACTIVE) {
-            protectFinalSuperAdmin(target);
+        if (request.status() == UserStatus.DISABLED && hasRole(target, RoleCodes.SUPER_ADMIN)) {
+            throw new ApiException(ErrorCode.INVALID_USER_STATE,
+                    "Super administrator accounts cannot be disabled.");
         }
 
         target.setStatus(request.status());
         target.setUpdatedAt(Instant.now());
         userRepository.saveAndFlush(target);
+
+        // The bulk session-revocation query clears the persistence context. Build the response
+        // first while the target's roles and their permissions can still be initialized.
+        AdminUserResponse response = toResponse(
+                target, participantRepository.findByUserId(userId).orElse(null));
         if (request.status() == UserStatus.DISABLED) {
             sessionService.revokeAllForUser(userId, SESSION_REASON_ACCOUNT_DISABLED);
         }
         AuthUser actor = actor(principal);
         audit(actor, "USER_STATUS_CHANGED", target,
                 Map.of("oldStatus", oldStatus.name(), "newStatus", request.status().name()));
-        return toResponse(target, participantRepository.findByUserId(userId).orElse(null));
+        return response;
     }
 
     @Transactional
@@ -301,11 +307,15 @@ public class AdminUserService {
 
     private void protectFinalSuperAdmin(AuthUser target) {
         boolean activeSuperAdmin = target.getStatus() == UserStatus.ACTIVE
-                && target.getRoles().stream().anyMatch(role -> RoleCodes.SUPER_ADMIN.equals(role.getRoleCode()));
+                && hasRole(target, RoleCodes.SUPER_ADMIN);
         if (activeSuperAdmin && userRepository.countActiveByRoleCode(RoleCodes.SUPER_ADMIN) <= 1) {
             throw new ApiException(ErrorCode.INVALID_USER_STATE,
                     "The final active super administrator cannot be disabled or demoted.");
         }
+    }
+
+    private static boolean hasRole(AuthUser user, String roleCode) {
+        return user.getRoles().stream().anyMatch(role -> roleCode.equals(role.getRoleCode()));
     }
 
     private AuthUser actor(AuthenticatedUser principal) {

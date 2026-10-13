@@ -40,5 +40,19 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
     Page<Registration> findForEvent(
             @Param("eventId") UUID eventId, @Param("query") String query, Pageable pageable);
 
+    @EntityGraph(attributePaths = "event")
+    @Query("select r from Registration r")
+    Page<Registration> findRecent(Pageable pageable);
+
+    @EntityGraph(attributePaths = "event")
+    @Query("""
+            select r from Registration r
+            join EventAdminAssignment a on a.event = r.event
+            where a.adminUser.userId = :userId
+              and a.status = 'ACTIVE'
+            """)
+    Page<Registration> findRecentForAssignedEvents(
+            @Param("userId") UUID userId, Pageable pageable);
+
     boolean existsByRegistrationNumber(String registrationNumber);
 }

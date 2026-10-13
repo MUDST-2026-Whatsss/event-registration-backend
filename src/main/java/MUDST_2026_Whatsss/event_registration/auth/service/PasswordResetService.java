@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
 
 /** Issues and consumes password-reset tokens without exposing account existence. */
 @Service
@@ -32,6 +33,7 @@ public class PasswordResetService {
     private final SessionService sessionService;
     private final AuthProperties properties;
     private final ApplicationEventPublisher eventPublisher;
+    private final SecurityAuditService securityAuditService;
 
     public PasswordResetService(AuthUserRepository userRepository,
                                 AuthActionTokenRepository tokenRepository,
@@ -39,7 +41,8 @@ public class PasswordResetService {
                                 PasswordEncoder passwordEncoder,
                                 SessionService sessionService,
                                 AuthProperties properties,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                SecurityAuditService securityAuditService) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.tokenHasher = tokenHasher;
@@ -47,6 +50,7 @@ public class PasswordResetService {
         this.sessionService = sessionService;
         this.properties = properties;
         this.eventPublisher = eventPublisher;
+        this.securityAuditService = securityAuditService;
     }
 
     @Transactional
@@ -76,6 +80,7 @@ public class PasswordResetService {
 
         eventPublisher.publishEvent(
                 new PasswordResetRequestedEvent(user.getUserId(), user.getEmail(), rawToken));
+        securityAuditService.recordSystem("PASSWORD_RESET_REQUESTED", user, Map.of());
     }
 
     @Transactional
@@ -95,8 +100,10 @@ public class PasswordResetService {
         user.setUpdatedAt(now);
         userRepository.save(user);
 
-        sessionService.revokeAllForUser(
+        int revoked = sessionService.revokeAllForUser(
                 user.getUserId(), SessionService.REASON_PASSWORD_CHANGED);
+        securityAuditService.recordSystem(
+                "PASSWORD_RESET_COMPLETED", user, Map.of("revokedSessions", revoked));
     }
 
     private static String normalizeEmail(String email) {

@@ -145,10 +145,25 @@ public class SuperAdminEventService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ChangeRequestReviewResponse> changeRequests(String status, Pageable pageable) {
-        Page<EventChangeRequest> requests = status == null || status.isBlank()
-                ? changeRequestRepository.findAll(pageable)
-                : changeRequestRepository.findByStatus(status.trim().toUpperCase(), pageable);
+    public Page<ChangeRequestReviewResponse> changeRequests(String status, String query, Pageable pageable) {
+        String normalizedStatus = status == null || status.isBlank()
+                ? null : status.trim().toUpperCase();
+        String normalizedQuery = query == null || query.isBlank()
+                ? null : query.trim();
+        Page<EventChangeRequest> requests;
+        if (normalizedStatus != null && normalizedQuery != null) {
+            requests = changeRequestRepository
+                    .findByStatusAndEvent_TitleContainingIgnoreCaseOrStatusAndRequestedBy_EmailContainingIgnoreCase(
+                            normalizedStatus, normalizedQuery, normalizedStatus, normalizedQuery, pageable);
+        } else if (normalizedStatus != null) {
+            requests = changeRequestRepository.findByStatus(normalizedStatus, pageable);
+        } else if (normalizedQuery != null) {
+            requests = changeRequestRepository
+                    .findByEvent_TitleContainingIgnoreCaseOrRequestedBy_EmailContainingIgnoreCase(
+                            normalizedQuery, normalizedQuery, pageable);
+        } else {
+            requests = changeRequestRepository.findAll(pageable);
+        }
         return requests.map(this::toChangeRequestResponse);
     }
 
