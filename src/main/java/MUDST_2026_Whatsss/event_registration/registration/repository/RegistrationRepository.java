@@ -16,6 +16,9 @@ import java.util.UUID;
 
 public interface RegistrationRepository extends JpaRepository<Registration, UUID> {
 
+    @Query("select r.event.eventId from Registration r where r.registrationId = :id and r.registeredByUserId = :userId")
+    Optional<UUID> findOwnedEventId(@Param("id") UUID id, @Param("userId") UUID userId);
+
     Optional<Registration> findByEvent_EventIdAndParticipantId(UUID eventId, UUID participantId);
 
     List<Registration> findByEvent_EventIdAndStatusIn(

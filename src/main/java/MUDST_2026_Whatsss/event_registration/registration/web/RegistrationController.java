@@ -72,4 +72,12 @@ public class RegistrationController {
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.cancel(registrationId, user);
     }
+
+    @PostMapping("/registrations/{registrationId}/mock-payment/confirm")
+    @PreAuthorize("hasAuthority('REGISTRATION_CREATE_SELF')")
+    public RegistrationResponse confirmMockPayment(
+            @PathVariable UUID registrationId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.confirmMockPayment(registrationId, user);
+    }
 }
