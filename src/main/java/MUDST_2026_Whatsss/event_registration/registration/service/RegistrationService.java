@@ -26,6 +26,7 @@ import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrat
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
 import org.springframework.data.domain.Page;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +57,7 @@ public class RegistrationService {
     private final ParticipantRepository participantRepository;
     private final EventMapper eventMapper;
     private final EventInvitationRepository invitationRepository;
+    private final boolean mockPaymentsEnabled;
 
     public RegistrationService(
             RegistrationRepository registrationRepository,
@@ -64,7 +66,8 @@ public class RegistrationService {
             EventAdminAssignmentRepository assignmentRepository,
             ParticipantRepository participantRepository,
             EventMapper eventMapper,
-            EventInvitationRepository invitationRepository) {
+            EventInvitationRepository invitationRepository,
+            @Value("${event.registration.mock-payments-enabled:false}") boolean mockPaymentsEnabled) {
         this.registrationRepository = registrationRepository;
         this.historyRepository = historyRepository;
         this.eventRepository = eventRepository;
@@ -72,6 +75,7 @@ public class RegistrationService {
         this.participantRepository = participantRepository;
         this.eventMapper = eventMapper;
         this.invitationRepository = invitationRepository;
+        this.mockPaymentsEnabled = mockPaymentsEnabled;
     }
 
     @Transactional
@@ -84,7 +88,8 @@ public class RegistrationService {
         if (now.isBefore(event.getRegistrationStartAt()) || !now.isBefore(event.getRegistrationEndAt())) {
             throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
         }
-        if (event.getEventType() == EventType.PAID) {
+        boolean paid = event.getEventType() == EventType.PAID;
+        if (paid && !mockPaymentsEnabled) {
             throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
         }
 
@@ -93,6 +98,11 @@ public class RegistrationService {
                 .findByEvent_EventIdAndParticipantId(eventId, participant.getParticipantId())
                 .orElse(null);
         if (registration != null && registration.getStatus().isActive()) {
+            // A retry resumes the same pending payment instead of consuming another seat.
+            if (paid && (registration.getStatus() == RegistrationStatus.PENDING_PAYMENT
+                    || registration.getStatus() == RegistrationStatus.CONFIRMED)) {
+                return toResponse(registration, now);
+            }
             throw new ApiException(ErrorCode.ALREADY_REGISTERED);
         }
         if (eventRepository.countActiveRegistrations(eventId) >= event.getMaximumParticipants()) {
@@ -108,13 +118,13 @@ public class RegistrationService {
                     .build();
         }
         registration.setRegisteredByUserId(principal.userId());
-        registration.setStatus(RegistrationStatus.CONFIRMED);
+        registration.setStatus(paid ? RegistrationStatus.PENDING_PAYMENT : RegistrationStatus.CONFIRMED);
         registration.setAttendeeName(attendeeName(request, participant, principal));
         registration.setAttendeeEmail(firstNonBlank(request.attendeeEmail(), principal.email()));
         registration.setAttendeePhone(attendeePhone(request, participant));
         registration.setConsentAcceptedAt(now);
         registration.setRegisteredAt(now);
-        registration.setConfirmedAt(now);
+        registration.setConfirmedAt(paid ? null : now);
         registration.setCancelledAt(null);
         registration.setCancellationReason(null);
         registration = registrationRepository.saveAndFlush(registration);
@@ -123,6 +133,36 @@ public class RegistrationService {
                 .ifPresent(invitation -> invitation.setAcceptedAt(now));
 
         recordTransition(registration, previous, principal.userId(), null);
+        return toResponse(registration, now);
+    }
+
+    /** Demo-only confirmation: never accepts a client-provided payment status or transaction ID. */
+    @Transactional
+    public RegistrationResponse confirmMockPayment(UUID registrationId, AuthenticatedUser principal) {
+        if (!mockPaymentsEnabled) {
+            throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
+        }
+        Registration registration = lockedOwned(registrationId, principal);
+        Event event = registration.getEvent();
+        Instant now = Instant.now();
+        if (event.getEventType() != EventType.PAID || event.getStatus() != EventStatus.PUBLISHED) {
+            throw new ApiException(ErrorCode.INVALID_REGISTRATION_STATE);
+        }
+        // Repeated confirmation returns the persisted result without duplicate history/seats.
+        if (registration.getStatus() == RegistrationStatus.CONFIRMED) {
+            return toResponse(registration, now);
+        }
+        if (registration.getStatus() != RegistrationStatus.PENDING_PAYMENT) {
+            throw new ApiException(ErrorCode.INVALID_REGISTRATION_STATE);
+        }
+        if (!now.isBefore(event.getRegistrationEndAt())) {
+            throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
+        }
+        registration.setStatus(RegistrationStatus.CONFIRMED);
+        registration.setConfirmedAt(now);
+        registration = registrationRepository.saveAndFlush(registration);
+        recordTransition(registration, RegistrationStatus.PENDING_PAYMENT, principal.userId(),
+                "MOCK_PAYMENT_CONFIRMED: no real payment collected");
         return toResponse(registration, now);
     }
 
@@ -153,7 +193,7 @@ public class RegistrationService {
 
     @Transactional
     public RegistrationResponse cancel(UUID registrationId, AuthenticatedUser principal) {
-        Registration registration = owned(registrationId, principal);
+        Registration registration = lockedOwned(registrationId, principal);
         Instant now = Instant.now();
         if (!cancellable(registration, now)) {
             throw new ApiException(ErrorCode.REGISTRATION_NOT_CANCELLABLE);
@@ -210,6 +250,13 @@ public class RegistrationService {
                 .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
     }
 
+    private Registration lockedOwned(UUID registrationId, AuthenticatedUser principal) {
+        UUID eventId = registrationRepository.findOwnedEventId(registrationId, principal.userId())
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        eventRepository.findByIdForUpdate(eventId).orElseThrow(EventNotFoundException::new);
+        return owned(registrationId, principal);
+    }
+
     /** Accounts created before participant profiles existed get one on first registration. */
     private Participant participantFor(AuthenticatedUser principal) {
         return participantRepository.findByUserId(principal.userId())
@@ -235,7 +282,7 @@ public class RegistrationService {
                 || registration.getStatus() == RegistrationStatus.PENDING_PAYMENT;
         return seatHeld
                 && event.getStatus() == EventStatus.PUBLISHED
-                && event.isAllowCancellation()
+                && (registration.getStatus() == RegistrationStatus.PENDING_PAYMENT || event.isAllowCancellation())
                 && now.isBefore(event.getStartAt())
                 && (event.getCancellationDeadlineAt() == null
                         || now.isBefore(event.getCancellationDeadlineAt()));

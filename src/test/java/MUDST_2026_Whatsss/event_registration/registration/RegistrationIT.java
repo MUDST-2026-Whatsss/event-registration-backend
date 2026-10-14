@@ -147,6 +147,7 @@ class RegistrationIT extends PostgresIntegrationTest {
 
         assertError(() -> service.register(eventId, consent(), fixtures.participant("erin", "Erin", null)),
                 ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
+        assertError(() -> service.confirmMockPayment(UUID.randomUUID(), admin), ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
     }
 
     @Test
