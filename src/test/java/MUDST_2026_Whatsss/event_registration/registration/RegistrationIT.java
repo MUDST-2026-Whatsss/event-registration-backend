@@ -138,15 +138,18 @@ class RegistrationIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void paidEventsAreNotRegistrableYet() {
+    void paidEventRegistrationRemainsPendingWhileCheckoutIsMocked() {
         UUID eventId = fixtures.publishedEvent(admin, "Paid event", 5);
         var event = eventRepository.findById(eventId).orElseThrow();
         event.setEventType(EventType.PAID);
         event.setPrice(new BigDecimal("100.00"));
         eventRepository.saveAndFlush(event);
 
-        assertError(() -> service.register(eventId, consent(), fixtures.participant("erin", "Erin", null)),
-                ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
+        var registration = service.register(
+                eventId, consent(), fixtures.participant("erin", "Erin", null));
+
+        assertThat(registration.status()).isEqualTo(RegistrationStatus.PENDING_PAYMENT);
+        assertThat(registration.confirmedAt()).isNull();
     }
 
     @Test

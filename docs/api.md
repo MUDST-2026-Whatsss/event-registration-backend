@@ -83,7 +83,6 @@ POST /api/v1/events/{eventId}/registrations
 | --- | --- | --- |
 | `EVENT_NOT_FOUND` | 404 | Event is missing or not published |
 | `REGISTRATION_CLOSED` | 409 | Outside `registrationStartAt` to `registrationEndAt` |
-| `PAID_REGISTRATION_UNAVAILABLE` | 409 | Paid events wait for the payment integration |
 | `ALREADY_REGISTERED` | 409 | Caller already holds an active registration for the event |
 | `EVENT_FULL` | 409 | Active registrations have reached `maximumParticipants` |
 | `REGISTRATION_NOT_CANCELLABLE` | 409 | Cancellation disabled, deadline passed, or event started |
@@ -92,7 +91,9 @@ POST /api/v1/events/{eventId}/registrations
 Capacity counts `PENDING_PAYMENT`, `CONFIRMED`, and `CHECKED_IN`. Public event responses include
 `maximumParticipants`, `remainingSeats` (null when the event hides the count), and `full`.
 Registering again after a cancellation reactivates the same row and registration number. Every
-status change is appended to `registration_status_history`.
+status change is appended to `registration_status_history`. Paid-event registrations remain
+`PENDING_PAYMENT` while checkout is a mockup; no payment is processed until a provider integration
+is available.
 
 ## Event image storage
 
@@ -172,6 +173,6 @@ The endpoint-by-endpoint implementation order is maintained in the workspace `PL
 - UUIDs are serialized as strings.
 - Timestamps are ISO-8601 with offsets.
 - Large collections are paginated and have a maximum page size.
-- Create-registration/payment operations require an idempotency key.
+- Registration retry idempotency is planned; the schema reserves a key for a future API contract.
 - Stale optimistic-lock versions return HTTP 409.
 - Administrative mutations produce audit records.

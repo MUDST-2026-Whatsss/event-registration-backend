@@ -10,6 +10,9 @@ migrations normally.
 tables and all 237 columns. It changes metadata only and does not modify business
 data. Keep it aligned with `docs/database.md` as later migrations add or rename fields.
 
+`V9__registration_idempotency_key.sql` adds the nullable idempotency key column and
+partial unique index reserved for future registration retry support.
+
 Important:
 
 - The local database originally recorded migrations V1 through V5, whose source

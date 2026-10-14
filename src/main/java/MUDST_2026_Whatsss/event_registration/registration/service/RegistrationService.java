@@ -84,10 +84,6 @@ public class RegistrationService {
         if (now.isBefore(event.getRegistrationStartAt()) || !now.isBefore(event.getRegistrationEndAt())) {
             throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
         }
-        if (event.getEventType() == EventType.PAID) {
-            throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
-        }
-
         Participant participant = participantFor(principal);
         Registration registration = registrationRepository
                 .findByEvent_EventIdAndParticipantId(eventId, participant.getParticipantId())
@@ -108,13 +104,16 @@ public class RegistrationService {
                     .build();
         }
         registration.setRegisteredByUserId(principal.userId());
-        registration.setStatus(RegistrationStatus.CONFIRMED);
+        RegistrationStatus nextStatus = event.getEventType() == EventType.PAID
+                ? RegistrationStatus.PENDING_PAYMENT
+                : RegistrationStatus.CONFIRMED;
+        registration.setStatus(nextStatus);
         registration.setAttendeeName(attendeeName(request, participant, principal));
         registration.setAttendeeEmail(firstNonBlank(request.attendeeEmail(), principal.email()));
         registration.setAttendeePhone(attendeePhone(request, participant));
         registration.setConsentAcceptedAt(now);
         registration.setRegisteredAt(now);
-        registration.setConfirmedAt(now);
+        registration.setConfirmedAt(nextStatus == RegistrationStatus.CONFIRMED ? now : null);
         registration.setCancelledAt(null);
         registration.setCancellationReason(null);
         registration = registrationRepository.saveAndFlush(registration);
