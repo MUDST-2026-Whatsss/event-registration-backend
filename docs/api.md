@@ -10,6 +10,8 @@ Base path: `/api/v1`
 | GET | `/actuator/health` | Public | Active operational health probe |
 | GET | `/api/v1/auth/csrf` | Public | Active |
 | POST | `/api/v1/auth/register` | Public, rate-limited | Active |
+| POST | `/api/v1/auth/forgot-password` | Public, CSRF-protected | Active; sends reset email when SMTP is configured |
+| POST | `/api/v1/auth/reset-password` | Public, CSRF-protected | Active; consumes one-use reset token |
 | POST | `/api/v1/auth/login` | Public, rate-limited | Active |
 | POST | `/api/v1/auth/refresh` | Refresh cookie | Active |
 | POST | `/api/v1/auth/select-role` | Authenticated | Active; issues an access token scoped to one assigned role |
@@ -20,11 +22,15 @@ Base path: `/api/v1`
 | GET | `/api/v1/event-categories` | Public | Active |
 | GET | `/api/v1/events` | Public | Active; all published events, soonest first, with seat availability (clients split upcoming/past by date) |
 | GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
-| POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events only, capacity enforced under a row lock |
+| POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events and classroom paid simulation, capacity enforced under a row lock |
+| POST | `/api/v1/registrations/{registrationId}/mock-payment/confirm` | Registration owner | Active only when mock payments are enabled; no real payment |
+| GET | `/api/v1/invitations` | Authenticated | Active; caller's published event invitations |
 | GET | `/api/v1/registrations` | `REGISTRATION_READ_SELF` | Active; caller's registrations, newest first |
 | GET | `/api/v1/registrations/{registrationId}` | `REGISTRATION_READ_SELF` | Active; caller's own registration only |
 | POST | `/api/v1/registrations/{registrationId}/cancel` | `REGISTRATION_CANCEL_SELF` | Active; within the event's cancellation policy |
 | GET | `/api/v1/admin/events` | Assigned ADMIN or SUPER_ADMIN | Active, paginated |
+| GET | `/api/v1/admin/registrations/recent` | Assigned ADMIN or SUPER_ADMIN | Active; recent registration activity |
+| GET | `/api/v1/admin/events/invitees/lookup?email=` | ADMIN or SUPER_ADMIN | Active; look up an existing participant |
 | GET | `/api/v1/admin/events/stats` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events` | `EVENT_CREATE` or SUPER_ADMIN | Active |
 | GET | `/api/v1/admin/events/{eventId}` | Assigned ADMIN or SUPER_ADMIN | Active |
@@ -58,13 +64,14 @@ Base path: `/api/v1`
 | GET | `/api/v1/admin/roles` | SUPER_ADMIN | Active; includes permissions and usage count |
 | POST | `/api/v1/admin/roles` | SUPER_ADMIN | Active; creates custom role |
 | PATCH | `/api/v1/admin/roles/{roleId}` | SUPER_ADMIN | Active; revokes sessions using the role |
+| DELETE | `/api/v1/admin/roles/{roleId}` | SUPER_ADMIN | Active; protected system-role rules apply |
 | PUT | `/api/v1/admin/roles/{roleId}/permissions` | SUPER_ADMIN | Active; revokes sessions using the role |
+| GET | `/api/v1/admin/permissions` | SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/audit-logs` | SUPER_ADMIN | Active; immutable paginated history |
 
 Multi-role login returns all assigned role codes but no active permissions until the client calls
 `POST /auth/select-role`. Access tokens contain only the selected role and its permissions. The
 client includes the selected role when refreshing so a rotated access token keeps the same scope.
-| GET | `/api/v1/admin/permissions` | SUPER_ADMIN | Active |
-| GET | `/api/v1/admin/audit-logs` | SUPER_ADMIN | Active; immutable paginated history |
 
 The legacy `/api/events` controller has been removed.
 
@@ -83,7 +90,7 @@ POST /api/v1/events/{eventId}/registrations
 | --- | --- | --- |
 | `EVENT_NOT_FOUND` | 404 | Event is missing or not published |
 | `REGISTRATION_CLOSED` | 409 | Outside `registrationStartAt` to `registrationEndAt` |
-| `PAID_REGISTRATION_UNAVAILABLE` | 409 | Paid events wait for the payment integration |
+| `PAID_REGISTRATION_UNAVAILABLE` | 409 | Mock paid registration is disabled in this environment |
 | `ALREADY_REGISTERED` | 409 | Caller already holds an active registration for the event |
 | `EVENT_FULL` | 409 | Active registrations have reached `maximumParticipants` |
 | `REGISTRATION_NOT_CANCELLABLE` | 409 | Cancellation disabled, deadline passed, or event started |
@@ -93,6 +100,10 @@ Capacity counts `PENDING_PAYMENT`, `CONFIRMED`, and `CHECKED_IN`. Public event r
 `maximumParticipants`, `remainingSeats` (null when the event hides the count), and `full`.
 Registering again after a cancellation reactivates the same row and registration number. Every
 status change is appended to `registration_status_history`.
+
+Paid registration is a classroom simulation. With `MOCK_PAYMENTS_ENABLED=true`, it creates a
+`PENDING_PAYMENT` record. The owner calls the mock confirmation endpoint to persist `CONFIRMED`;
+repeated confirmation returns the same registration. No bank transaction or provider webhook is used.
 
 ## Event image storage
 
@@ -154,24 +165,25 @@ Errors use a stable machine-readable code and safe message, with optional valida
 
 Do not branch frontend logic on human-readable messages.
 
-## Planned endpoint groups
+## Classroom scope and optional work
 
-- Public catalogue: categories, event search/list, event detail
-- Admin event lifecycle is active; dashboard-specific trends and registration totals remain planned
-- Super-admin event governance, users, roles, permissions, and audit history are active
-- Registrations: QR ticket token and create-registration idempotency key
-- Event operations: check-in and CSV export
-- Administration still planned: invitations and aggregate dashboard endpoints
-- Auth completion still planned: email verification and invitation acceptance
-- Payment: disabled provider abstraction first, verified provider/webhook integration later
+Implemented: public events, partial drafts, event invitations, registration/cancellation, participant
+lists, dashboards, event governance, users/roles/permissions, password recovery, and audit activity.
+The audit controller also provides `/admin/audit-logs/export`, `/sign-ins`, `/sign-ins/export`,
+`/sessions`, and `/sessions/export` beneath `/api/v1`. Exports are Excel workbooks.
 
-The endpoint-by-endpoint implementation order is maintained in the workspace `PLAN.md`.
+Optional future work includes server-stored profile avatars, signed attendance tickets, check-in,
+individual admin registration cancellation, participant export, and email verification outside the
+local profile. Real payments are not required for this university project.
+
+The Week 9 deployment of another team's application is pending its repository details.
 
 ## Contract rules
 
 - UUIDs are serialized as strings.
 - Timestamps are ISO-8601 with offsets.
 - Large collections are paginated and have a maximum page size.
-- Create-registration/payment operations require an idempotency key.
+- Database uniqueness prevents duplicate active registrations; a cancelled registration can be reactivated.
+- A retry of mock paid registration resumes the same pending record; no idempotency-key header is required.
 - Stale optimistic-lock versions return HTTP 409.
 - Administrative mutations produce audit records.

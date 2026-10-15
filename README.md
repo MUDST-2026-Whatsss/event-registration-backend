@@ -9,7 +9,7 @@ Available at runtime:
 - Health endpoints
 - Register, login, refresh, logout, and current-user authentication
 - Cookie and CSRF protection
-- Participant profile update and password change
+- Participant profile update, password change, and SMTP password recovery
 - Database-backed roles, permissions, sessions, login attempts, and account lockout
 - Current UUID event/category persistence model with pageable repository and validation foundation
 - Private MinIO object storage with validated event-image upload, public read proxy, and owner-scoped deletion
@@ -18,6 +18,13 @@ Administrative event lifecycle, review, audit, and category APIs are active, as 
 event catalogue (with remaining seats), participant registration and cancellation with capacity
 enforcement, and the per-event participant list for administrators. See `docs/api.md` for the
 current API contract.
+
+This is a university classroom project. Paid registration uses the existing QR simulation and a
+backend mock confirmation (`MOCK_PAYMENTS_ENABLED`, enabled by the `local` profile). No real payment
+provider is required. Registration and cancellation still persist in PostgreSQL.
+
+The Week 9 deployment of another team's project/database is pending its repository and setup
+details. Do not substitute another copy of this project for that assignment.
 
 ## Requirements
 

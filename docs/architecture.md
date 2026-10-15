@@ -36,13 +36,15 @@ entities.
 | `auth` | Active | Accounts, participant profile, cookies, JWT, sessions, roles/permissions, lockout, and rate limiting |
 | `health` | Active | Lightweight and Actuator health checks |
 | `common` | Active | JSON configuration and stable error responses |
-| `event` | Active | Assigned Admin list/stats, draft/update/submit/withdraw/cancel, published-event change requests, audit writes, categories, and optimistic locking; public catalogue is next |
+| `event` | Active | Public catalogue, categories, partial drafts, event lifecycle, invitations, admin assignments, review/change-request decisions, and audit/security activity |
 | `storage` | Active | MinIO client, private bucket, event-image validation, upload/read/delete, and URL resolution |
-| `registration` | Planned | Capacity, registration lifecycle, cancellation, QR, and check-in |
-| `payment` | Planned scaffold | Provider abstraction and verified payment state |
-| `administration` | Partial | Admin ownership and change-request submission are active; Super Admin review/assignment and user/role operations are planned |
-| `audit` | Partial | Admin event lifecycle writes append-only records; audit query API is planned |
-| `notification` | Planned | Transactional outbox and email delivery |
+| `registration` | Active | Capacity, free/demo-paid registration, participant cancellation, invitations, participant lists and recent registrations |
+| `admin` | Active | Dashboard aggregation |
+
+User/role administration and SMTP password recovery live in `auth`. Event governance and audit
+query/export live in `event`. QR payment confirmation is a classroom simulation within
+`registration`; no separate payment provider module is required. Attendance scanning and participant
+export are outside the current scope.
 
 ## Security model
 
@@ -62,8 +64,8 @@ entities.
 ## Concurrency model
 
 Use optimistic locking for normal edits and PostgreSQL row locks for state transitions that must be
-serialized. Event capacity uses event-row locking, idempotency, unique constraints, and expiring
-seat holds. An external message queue is not required for first-release capacity control.
+serialized. Event capacity uses event-row locking and database uniqueness constraints. Demo payment retries
+resume the existing pending registration; automatic hold expiry is not implemented. An external message queue is not required for first-release capacity control.
 
 ## Time and identifiers
 
