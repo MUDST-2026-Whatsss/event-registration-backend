@@ -146,9 +146,14 @@ assets use root URLs on the same origin. The API is available at
 The Ingress structure follows Class Week 8 and the path-routing task on Lab Week 9, page 29.
 
 GitHub Actions deploys automatically on every push to `main`: after tests pass and the image is
-pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner, loads the tested
-image, builds the frontend image from the frontend repo's `develop` branch, creates the Secret, applies
-`k8s/`, waits for the rollout and calls `/api/health` directly and through the frontend.
+pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner and loads the tested
+backend image. The build job checks out frontend `develop`, runs unit tests, the build, and Cypress,
+and records its commit SHA. Deployment checks out that exact frontend SHA, builds its image,
+creates the Secret, applies `k8s/`, and waits for the rollout. Health checks cover the API, frontend
+proxy, and classroom Ingress path. Both commit SHAs appear in the Actions run summary.
+
+The CI Minikube cluster is temporary and ends with the runner. It demonstrates deployment for the
+course; it does not create a permanent hosted website. Use the commands above for the local demo.
 
 The Compose files build the pinned final MinIO community security release from its upstream Go tag
 because that release is not available as a public registry image. The first build takes longer;
