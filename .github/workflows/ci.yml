@@ -130,6 +130,8 @@ jobs:
           # Newer Minikube defaults to containerd; use Docker so docker-env works
           minikube start --driver=docker --container-runtime=docker
           kubectl get nodes
+          minikube addons enable ingress
+          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s
 
       - name: Load images into Minikube
         run: |
@@ -175,6 +177,7 @@ jobs:
           kubectl -n event-registration rollout status deployment/event-registration-api --timeout=300s
           kubectl apply -f k8s/frontend.yaml
           kubectl -n event-registration rollout status deployment/event-registration-frontend --timeout=180s
+          kubectl apply -f k8s/ingress.yaml
 
       - name: Smoke test deployed API
         run: |
@@ -188,6 +191,13 @@ jobs:
           sleep 5
           curl -sf -o /dev/null http://127.0.0.1:8090/
           curl -sf http://127.0.0.1:8090/api/health
+
+      - name: Smoke test classroom Ingress
+        run: |
+          kubectl -n ingress-nginx port-forward service/ingress-nginx-controller 16969:80 > /tmp/ingress-forward.log 2>&1 &
+          timeout 60s bash -c 'until curl -fsS http://127.0.0.1:16969/event-registration/api/health; do sleep 2; done'
+          curl -fsS http://127.0.0.1:16969/event-registration/ | grep -q '<div id="app">'
+          curl -fsS http://127.0.0.1:16969/api/health
 
       - name: Show pod details on failure
         if: failure()

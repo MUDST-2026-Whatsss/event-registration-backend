@@ -91,6 +91,7 @@ Manifests are in `k8s/`:
 | `deployment.yaml` | API Deployment (2 replicas, RollingUpdate, liveness/readiness probes) |
 | `service.yaml` | API NodePort Service on port `30080` |
 | `frontend.yaml` | Frontend Deployment (2 replicas) + NodePort Service on `30090`, and Service `api` used by the frontend nginx proxy |
+| `ingress.yaml` | Classroom path `/event-registration` and frontend root routes through the Nginx Ingress controller |
 
 The Secret is not stored in Git; create it with `kubectl create secret`.
 
@@ -122,6 +123,20 @@ kubectl -n event-registration port-forward service/event-registration-frontend 8
 Open the site through `http://localhost:8090` (or `http://<minikube ip>:30090` on Linux). The API only
 accepts sign-in requests from origins listed in `CORS_ALLOWED_ORIGINS` in `k8s/configmap.yaml`; add
 any other URL you use there.
+
+For the Week 9 Ingress exercise, after deploying the services:
+
+```bash
+minikube addons enable ingress
+kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s
+kubectl apply -f k8s/ingress.yaml
+kubectl -n ingress-nginx port-forward service/ingress-nginx-controller 16969:80
+```
+
+Open `http://localhost:16969/event-registration/`. The existing frontend navigation and
+assets use root URLs on the same origin. The API is available at
+`http://localhost:16969/event-registration/api/health` and `/api/health`.
+The Ingress structure follows Class Week 8 and the path-routing task on Lab Week 9, page 29.
 
 GitHub Actions deploys automatically on every push to `main`: after tests pass and the image is
 pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner, loads the tested

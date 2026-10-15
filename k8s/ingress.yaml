@@ -1,0 +1,43 @@
+# Week 9: access the project through localhost:16969/event-registration.
+# The frontend keeps its existing root URLs for navigation, assets, and /api.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: event-registration
+  namespace: event-registration
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: 3m
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /event-registration(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: event-registration-frontend
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: event-registration-frontend
+  namespace: event-registration
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 3m
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: event-registration-frontend
+                port:
+                  number: 80
