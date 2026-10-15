@@ -24,8 +24,11 @@ must use isolated local/Testcontainers databases.
 ## Tests
 
 ```bash
-mvn verify
+./mvnw verify
 ```
+
+On Windows PowerShell, run `./mvnw.cmd verify`. Use Java 17 and keep Docker Desktop running.
+The included wrapper downloads Maven automatically; no global Maven installation is required.
 
 The build must fail if migrations cannot apply or Hibernate mappings do not match PostgreSQL. Event
 tests are included in the normal build. The optional live storage round-trip test is documented in
@@ -40,4 +43,4 @@ the root README and runs only when `RUN_MINIO_IT=true`.
 - Do not log cookies, passwords, raw tokens, or personal/payment data.
 - Add unit tests and PostgreSQL integration tests for state transitions.
 - Add Flyway migrations before relying on a new field or constraint.
-- Run `mvn verify` and `git diff --check` before handoff.
+- Run `./mvnw verify` (Windows: `./mvnw.cmd verify`) and `git diff --check` before handoff.

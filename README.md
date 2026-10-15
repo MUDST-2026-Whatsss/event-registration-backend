@@ -26,7 +26,7 @@ provider is required. Registration and cancellation still persist in PostgreSQL.
 ## Requirements
 
 - Java 17
-- Maven 3.9+
+- The included Maven wrapper downloads Maven automatically; a separate Maven installation is optional.
 - Docker Desktop for the standard local environment and Testcontainers tests
 
 ## Configuration
@@ -49,8 +49,17 @@ Never commit `.env`. Production values belong in deployment secrets.
 
 ## Run with local PostgreSQL
 
-Use the `POSTGRES_*` values from `.env.example`, clone the frontend repository beside this
-repository, then run:
+Clone both repositories beside each other. Use frontend `develop` to include the latest application
+and browser tests, matching the backend CI workflow:
+
+```bash
+git clone https://github.com/MUDST-2026-Whatsss/event-registration-backend.git
+git clone --branch develop https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
+cd event-registration-backend
+```
+
+Copy `.env.example` to `.env` and replace the placeholder secrets as described above. A new local
+database is initialized automatically by Flyway; no existing database dump is required. Then run:
 
 ```bash
 docker compose up -d
@@ -163,7 +172,7 @@ Optional storage round-trip test while Compose MinIO is running:
 set -a
 source .env
 set +a
-RUN_MINIO_IT=true mvn test-compile \
+RUN_MINIO_IT=true ./mvnw test-compile \
   -Dit.test=MinioObjectStorageLiveIT \
   failsafe:integration-test failsafe:verify
 ```
@@ -171,8 +180,11 @@ RUN_MINIO_IT=true mvn test-compile \
 ## Verify
 
 ```bash
-mvn verify
+./mvnw verify
 ```
+
+On Windows PowerShell, use `./mvnw.cmd verify`. Set `JAVA_HOME` to a Java 17 JDK and start Docker
+Desktop before running either command. The wrapper downloads Maven and dependencies on first use.
 
 The integration suite uses an isolated PostgreSQL 18.6 Testcontainer. H2 is intentionally not used
 because the schema relies on PostgreSQL types, indexes, and constraints.

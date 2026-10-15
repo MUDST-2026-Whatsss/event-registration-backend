@@ -36,7 +36,7 @@ mkdir event-registration-workspace
 cd event-registration-workspace
 
 git clone https://github.com/MUDST-2026-Whatsss/event-registration-backend.git
-git clone https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
+git clone --branch develop https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
 ```
 
 หาก repository เป็น private ต้อง login GitHub ด้วย account ที่มีสิทธิ์ก่อน
@@ -219,7 +219,7 @@ New-Item -ItemType Directory -Path event-registration-workspace -Force
 Set-Location event-registration-workspace
 
 git clone https://github.com/MUDST-2026-Whatsss/event-registration-backend.git
-git clone https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
+git clone --branch develop https://github.com/MUDST-2026-Whatsss/event-registration-frontend.git
 Set-Location event-registration-backend
 ```
 
