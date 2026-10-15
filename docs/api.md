@@ -176,8 +176,6 @@ Optional future work includes server-stored profile avatars, signed attendance t
 individual admin registration cancellation, participant export, and email verification outside the
 local profile. Real payments are not required for this university project.
 
-The Week 9 deployment of another team's application is pending its repository details.
-
 ## Contract rules
 
 - UUIDs are serialized as strings.

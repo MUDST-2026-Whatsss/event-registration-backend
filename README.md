@@ -23,9 +23,6 @@ This is a university classroom project. Paid registration uses the existing QR s
 backend mock confirmation (`MOCK_PAYMENTS_ENABLED`, enabled by the `local` profile). No real payment
 provider is required. Registration and cancellation still persist in PostgreSQL.
 
-The Week 9 deployment of another team's project/database is pending its repository and setup
-details. Do not substitute another copy of this project for that assignment.
-
 ## Requirements
 
 - Java 17
