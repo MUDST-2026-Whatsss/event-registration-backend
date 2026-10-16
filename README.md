@@ -265,6 +265,10 @@ Desktop before running either command. The wrapper downloads Maven and dependenc
 The integration suite uses an isolated PostgreSQL 18.6 Testcontainer. H2 is intentionally not used
 because the schema relies on PostgreSQL types, indexes, and constraints.
 
+`verify` also writes a JaCoCo coverage report for the unit and integration tests to
+`target/site/jacoco/index.html`. CI shows the line and branch totals in the run summary and attaches
+the full report to the `test-reports` artifact.
+
 Health checks:
 
 ```bash
