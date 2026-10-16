@@ -90,6 +90,8 @@ public class AuthProperties {
     @Setter
     public static class Cors {
         /** Exact origins allowed to send credentialed requests; wildcards are not permitted. */
-        private List<String> allowedOrigins = List.of("http://localhost:5173");
+        private List<String> allowedOrigins = List.of(
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                "http://localhost:5174", "http://127.0.0.1:5174");
     }
 }

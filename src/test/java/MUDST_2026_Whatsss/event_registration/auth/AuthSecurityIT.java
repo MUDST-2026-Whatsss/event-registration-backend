@@ -44,7 +44,9 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -75,6 +77,26 @@ class AuthSecurityIT extends PostgresIntegrationTest {
 
     @Autowired
     private TokenHasher tokenHasher;
+
+    @Test
+    void localViteOriginsCanInitializeCsrfWithCredentials() throws Exception {
+        for (String origin : List.of(
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                "http://localhost:5174", "http://127.0.0.1:5174")) {
+            mockMvc.perform(get("/api/v1/auth/csrf").header("Origin", origin))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin))
+                    .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
+                    .andExpect(jsonPath("$.token").isNotEmpty());
+        }
+    }
+
+    @Test
+    void unlistedOriginsCannotInitializeCsrf() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/csrf").header("Origin", "https://untrusted.example"))
+                .andExpect(status().isForbidden())
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+    }
 
     @Test
     void loginWithoutCsrfIsRejectedBeforeCredentialsAreProcessed() throws Exception {

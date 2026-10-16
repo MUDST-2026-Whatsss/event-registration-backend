@@ -70,6 +70,11 @@ Open the frontend at `http://localhost:5173`. It serves the production Vue build
 proxies same-origin `/api` requests to the API container. Set `FRONTEND_PORT` when port 5173 is not
 available.
 
+For Vite development, the local CORS defaults allow `localhost` and `127.0.0.1` on ports 5173
+and 5174. If your existing `.env` overrides `CORS_ALLOWED_ORIGINS`, include the exact URL printed
+by `npm run dev`. After changing that variable, recreate the API container with
+`docker compose up -d --no-deps api`; restarting alone does not reload Compose environment values.
+
 MinIO API and Console bind to loopback only:
 
 - S3 API: `http://localhost:9000`
