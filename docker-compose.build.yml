@@ -1,0 +1,32 @@
+# Source builds for development and pre-publication CI checks.
+# docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  api:
+    image: event-registration-api:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      labels:
+        org.opencontainers.image.source: https://github.com/MUDST-2026-Whatsss/event-registration-backend
+        org.opencontainers.image.revision: ${GITHUB_SHA:-working-tree}
+  minio:
+    image: event-registration-minio:RELEASE.2025-10-15T17-29-55Z
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: docker/minio/Dockerfile
+      args:
+        MINIO_VERSION: RELEASE.2025-10-15T17-29-55Z
+      labels:
+        org.opencontainers.image.source: https://github.com/MUDST-2026-Whatsss/event-registration-backend
+        org.opencontainers.image.revision: ${GITHUB_SHA:-working-tree}
+  frontend:
+    image: event-registration-frontend:local
+    pull_policy: build
+    build:
+      context: ${FRONTEND_DIR:-../event-registration-frontend}
+      dockerfile: Dockerfile
+      labels:
+        org.opencontainers.image.source: https://github.com/MUDST-2026-Whatsss/event-registration-backend
+        org.opencontainers.image.revision: ${FRONTEND_REVISION:-working-tree}

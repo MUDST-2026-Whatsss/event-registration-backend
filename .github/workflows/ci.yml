@@ -12,11 +12,21 @@ permissions:
   contents: read
   packages: write
 
+env:
+  RELEASE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      FRONTEND_DIR: ./frontend
     outputs:
       frontend-sha: ${{ steps.frontend-revision.outputs.sha }}
+      release-tag: ${{ steps.image-revision.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -50,7 +60,7 @@ jobs:
           sed -i 's/replace-with-a-long-random-minio-secret/event_minio_ci_secret_12345/' .env
 
       - name: Start services with Docker Compose
-        run: docker compose up -d --build postgres minio api
+        run: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio api
 
       - name: Wait for API health
         run: |
@@ -69,7 +79,9 @@ jobs:
       - name: Record frontend revision
         id: frontend-revision
         working-directory: frontend
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "FRONTEND_REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Run Frontend unit tests, build and browser tests
         working-directory: frontend
@@ -79,9 +91,24 @@ jobs:
           npm run build
           npm run test:e2e
 
+      - name: Test the built frontend container and its API proxy
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --no-deps --wait --wait-timeout 240 frontend
+          curl -fsS http://127.0.0.1:5173/ | grep -q '<div id="app">'
+          test "$(curl -fsS http://127.0.0.1:5173/api/health)" = "OK"
+
+      - name: Test live MinIO upload, read and deletion
+        env:
+          RUN_MINIO_IT: 'true'
+          STORAGE_ENDPOINT: http://127.0.0.1:9000
+          STORAGE_ACCESS_KEY: event_minio_admin
+          STORAGE_SECRET_KEY: event_minio_ci_secret_12345
+          STORAGE_BUCKET: event-registration
+        run: ./mvnw -B test-compile -Dit.test=MinioObjectStorageLiveIT failsafe:integration-test failsafe:verify
+
       - name: Stop Docker Compose services
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.build.yml down -v
 
       - name: Upload Cypress artifacts on failure
         if: failure()
@@ -96,23 +123,51 @@ jobs:
           if-no-files-found: ignore
 
       - name: Set lowercase image prefix
-        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration" >> $GITHUB_ENV
+        id: image-revision
+        run: |
+          echo "IMAGE=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration" >> "$GITHUB_ENV"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare candidate delivery before publishing
+        id: prepublish-bundle
+        run: |
+          docker tag event-registration-api:local "$IMAGE:${{ env.RELEASE_TAG }}"
+          docker tag event-registration-frontend:local "$IMAGE-frontend:${{ env.RELEASE_TAG }}"
+          docker tag event-registration-minio:RELEASE.2025-10-15T17-29-55Z "$IMAGE-minio:${{ env.RELEASE_TAG }}"
+          node scripts/prepare-delivery.js --output target/docker-prepublish --tag '${{ env.RELEASE_TAG }}' --frontend-sha '${{ steps.frontend-revision.outputs.sha }}'
+
+      - name: Test candidate images using only the delivery files
+        run: |
+          docker compose -p delivery-prepublish -f target/docker-prepublish/docker-compose.yml --env-file target/docker-prepublish/.env up -d --pull never --wait --wait-timeout 240
+          DELIVERY_TEST_PROJECT=delivery-prepublish DELIVERY_DIRECTORY=target/docker-prepublish node scripts/smoke-delivery.js
+
+      - name: Show candidate logs on failure
+        if: failure() && steps.prepublish-bundle.outcome == 'success'
+        run: docker compose -p delivery-prepublish -f target/docker-prepublish/docker-compose.yml --env-file target/docker-prepublish/.env logs --tail=100
+
+      - name: Stop disposable candidate services
+        if: always() && steps.prepublish-bundle.outcome == 'success'
+        run: docker compose -p delivery-prepublish -f target/docker-prepublish/docker-compose.yml --env-file target/docker-prepublish/.env down -v
 
       - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+      - name: Publish the exact tested API image
+        if: github.event_name != 'pull_request'
+        run: docker push "$IMAGE:${{ env.RELEASE_TAG }}"
+
+      - name: Publish the exact tested frontend image
+        if: github.event_name != 'pull_request'
+        run: docker push "$IMAGE-frontend:${{ env.RELEASE_TAG }}"
+
+      - name: Publish the exact tested MinIO image
+        if: github.event_name != 'pull_request'
+        run: docker push "$IMAGE-minio:${{ env.RELEASE_TAG }}"
 
       - name: Upload test reports
         if: always()
@@ -123,10 +178,64 @@ jobs:
             target/surefire-reports
             target/failsafe-reports
 
-  deploy-kubernetes:
+  verify-delivery:
     needs: build-and-test
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.build-and-test.outputs.release-tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate image-only delivery with unique local secrets
+        run: node scripts/prepare-delivery.js --output target/docker-delivery --tag '${{ env.RELEASE_TAG }}' --frontend-sha '${{ needs.build-and-test.outputs.frontend-sha }}'
+      - name: Check anonymous image access
+        run: node scripts/check-public-images.js '${{ env.RELEASE_TAG }}'
+      - name: Start only the delivery files without source builds
+        working-directory: target/docker-delivery
+        run: docker compose -p delivery-ci up -d --wait --wait-timeout 240
+      - name: Test actual image-only authentication and admin dashboard
+        env:
+          DELIVERY_TEST_PROJECT: delivery-ci
+          DELIVERY_DIRECTORY: target/docker-delivery
+        run: node scripts/smoke-delivery.js
+      - name: Show delivery logs on failure
+        if: failure()
+        working-directory: target/docker-delivery
+        run: docker compose -p delivery-ci logs --tail=100
+      - name: Stop disposable delivery services
+        if: always()
+        working-directory: target/docker-delivery
+        run: docker compose -p delivery-ci down -v
+      - name: Log in to promote the verified release
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote verified images to latest
+        run: |
+          IMAGE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration"
+          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:${{ env.RELEASE_TAG }}"
+          docker buildx imagetools create -t "$IMAGE-frontend:latest" "$IMAGE-frontend:${{ env.RELEASE_TAG }}"
+          docker buildx imagetools create -t "$IMAGE-minio:latest" "$IMAGE-minio:${{ env.RELEASE_TAG }}"
+      - name: Upload verified teacher delivery
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-delivery-${{ env.RELEASE_TAG }}
+          path: target/docker-delivery/
+          include-hidden-files: true
+
+  deploy-kubernetes:
+    needs: [build-and-test, verify-delivery]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.build-and-test.outputs.release-tag }}
 
     steps:
       - name: Checkout
@@ -144,27 +253,15 @@ jobs:
 
       - name: Load images into Minikube
         run: |
-          IMAGE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration:${{ github.sha }}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/event-registration:${{ env.RELEASE_TAG }}"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
           # Use Minikube's Docker so the cluster can see the images directly
           eval $(minikube docker-env)
-          echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
           docker pull "$IMAGE"
-          docker build -t event-registration-minio:RELEASE.2025-10-15T17-29-55Z -f docker/minio/Dockerfile .
-
-      - name: Checkout Frontend
-        uses: actions/checkout@v4
-        with:
-          repository: MUDST-2026-Whatsss/event-registration-frontend
-          # Reuse the exact frontend revision tested by build-and-test.
-          ref: ${{ needs.build-and-test.outputs.frontend-sha }}
-          path: frontend
-
-      - name: Build frontend image in Minikube
-        run: |
-          test "$(git -C frontend rev-parse HEAD)" = "${{ needs.build-and-test.outputs.frontend-sha }}"
-          eval $(minikube docker-env)
-          docker build -t event-registration-frontend:local frontend
+          PREFIX="${IMAGE%:${{ env.RELEASE_TAG }}}"
+          echo "IMAGE_PREFIX=$PREFIX" >> "$GITHUB_ENV"
+          docker pull "$PREFIX-frontend:${{ env.RELEASE_TAG }}"
+          docker pull "$PREFIX-minio:${{ env.RELEASE_TAG }}"
 
       - name: Create namespace and secret
         run: |
@@ -178,14 +275,15 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
-          kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/minio.yaml -f k8s/service.yaml
+          kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/service.yaml
+          sed "s|ghcr.io/mudst-2026-whatsss/event-registration-minio:latest|$IMAGE_PREFIX-minio:${{ env.RELEASE_TAG }}|" k8s/minio.yaml | kubectl apply -f -
           # Wait for the database and storage before starting the API
           kubectl -n event-registration rollout status statefulset/postgres --timeout=180s
           kubectl -n event-registration rollout status deployment/minio --timeout=180s
           # Deploy the exact image that was tested in the previous job
           sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|$IMAGE|" k8s/deployment.yaml | kubectl apply -f -
           kubectl -n event-registration rollout status deployment/event-registration-api --timeout=300s
-          kubectl apply -f k8s/frontend.yaml
+          sed "s|ghcr.io/mudst-2026-whatsss/event-registration-frontend:latest|$IMAGE_PREFIX-frontend:${{ env.RELEASE_TAG }}|" k8s/frontend.yaml | kubectl apply -f -
           kubectl -n event-registration rollout status deployment/event-registration-frontend --timeout=180s
           kubectl apply -f k8s/ingress.yaml
 
@@ -212,6 +310,7 @@ jobs:
       - name: Record deployed revisions
         run: |
           echo "Backend: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image release: ${{ env.RELEASE_TAG }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Frontend: ${{ needs.build-and-test.outputs.frontend-sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Classroom Ingress checks passed. This Minikube environment exists only for this Actions run." >> "$GITHUB_STEP_SUMMARY"
 

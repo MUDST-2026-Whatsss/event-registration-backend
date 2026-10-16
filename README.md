@@ -25,9 +25,55 @@ provider is required. Registration and cancellation still persist in PostgreSQL.
 
 ## Requirements
 
-- Java 17
-- The included Maven wrapper downloads Maven automatically; a separate Maven installation is optional.
-- Docker Desktop for the standard local environment and Testcontainers tests
+- To run the delivered system: Docker Desktop with Docker Compose v2 and an internet connection.
+- To change source code: Git and both repositories. Docker builds include Java/Node build tools.
+- To run backend tests outside Docker: Java 17. The included Maven wrapper downloads Maven;
+  Testcontainers tests also need Docker Desktop running.
+
+## Run a published delivery
+
+The release workflow prepares `docker-delivery-<release tag>` as an Actions artifact. Its release
+tag combines the backend commit SHA, workflow run ID, and run attempt (`<SHA>-<run ID>-<attempt>`).
+Before handing it to an instructor, the updated workflow must be pushed and pass, and all three
+GHCR application packages must allow public pulls. Preparing files locally does not publish a
+release. Download the artifact from that successful Backend CI run and extract it. It contains
+`docker-compose.yml`, a generated `.env` with unique classroom secrets, and its own instructions.
+In that folder, run:
+
+```bash
+docker compose up -d
+```
+
+Compose downloads the frontend, API, PostgreSQL, and MinIO images. No source checkout, Java, Node.js,
+or build command is needed. Open `http://localhost:5173` once the services are healthy. Check startup:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 frontend api
+```
+
+The release workflow publishes three application images under `ghcr.io/mudst-2026-whatsss/` as
+`event-registration`, `event-registration-frontend`, and `event-registration-minio`. The delivery
+package sets one `IMAGE_TAG` to that run's release tag for all three; the frontend image contains
+the frontend commit tested by that backend run. Backend and frontend source SHAs are recorded
+separately in `versions.txt`. Each rerun gets a distinct tag, so it cannot replace an earlier
+delivery's images. `latest` is promoted after verification for routine local use. Images are
+pulled on startup, so keep the package's pinned `IMAGE_TAG` for a repeatable classroom demonstration.
+
+For a local preview before publication, first build and tag all three candidate images locally
+and prepare the preview `.env`. Then use `docker compose up -d --pull never` to test the same
+image-only Compose file. A successful local preview does not confirm anonymous registry access.
+
+A fresh database is created by Flyway and starts without user accounts or events. Register at
+`http://localhost:5173/register`; see [first administrator setup](docs/docker-setup.md#first-administrator)
+to create the initial administrator. The classroom `local` profile allows immediate login and
+keeps the QR payment simulation enabled. Actual password-reset email requires your own SMTP
+settings; ordinary signup/login does not require email delivery.
+
+Keep the generated `.env` private and reuse it when restarting the same installation. Keep the
+Compose project name and named volumes unchanged to retain database and image data. Stop with
+`docker compose down`; adding `-v` deletes that data. Do not replace an existing installation's
+database/storage passwords with a new artifact's values.
 
 ## Configuration
 
@@ -35,6 +81,7 @@ Copy `.env.example` to the ignored `.env` and replace every placeholder secret. 
 
 | Variable | Purpose |
 | --- | --- |
+| `IMAGE_TAG` | Shared image release `<backend SHA>-<workflow run ID>-<attempt>`, or mutable `latest` |
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Direct/managed PostgreSQL connection |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Local Compose PostgreSQL |
 | `DB_SCHEMA` | Application schema; normally `public` |
@@ -47,7 +94,7 @@ Copy `.env.example` to the ignored `.env` and replace every placeholder secret. 
 
 Never commit `.env`. Production values belong in deployment secrets.
 
-## Run with local PostgreSQL
+## Build and run from source with local PostgreSQL
 
 Clone both repositories beside each other. Use frontend `develop` to include the latest application
 and browser tests, matching the backend CI workflow:
@@ -62,9 +109,13 @@ Copy `.env.example` to `.env` and replace the placeholder secrets as described a
 database is initialized automatically by Flyway; no existing database dump is required. Then run:
 
 ```bash
-docker compose up -d
-docker compose logs -f frontend api
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.build.yml logs -f frontend api
 ```
+
+`docker-compose.yml` runs published images. `docker-compose.build.yml` adds the source build
+contexts and local image settings for development/CI. Use both files for subsequent source-build
+commands; this prevents a plain `up` from replacing your local build with a published image.
 
 Open the frontend at `http://localhost:5173`. It serves the production Vue build through Nginx and
 proxies same-origin `/api` requests to the API container. Set `FRONTEND_PORT` when port 5173 is not
@@ -73,7 +124,8 @@ available.
 For Vite development, the local CORS defaults allow `localhost` and `127.0.0.1` on ports 5173
 and 5174. If your existing `.env` overrides `CORS_ALLOWED_ORIGINS`, include the exact URL printed
 by `npm run dev`. After changing that variable, recreate the API container with
-`docker compose up -d --no-deps api`; restarting alone does not reload Compose environment values.
+`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --no-deps api`;
+restarting alone does not reload Compose environment values.
 
 MinIO API and Console bind to loopback only:
 
@@ -127,11 +179,14 @@ kubectl -n event-registration create secret generic event-registration-secret \
   --from-literal=JWT_SECRET=$(openssl rand -base64 48) \
   --from-literal=STORAGE_ACCESS_KEY=event_minio_admin \
   --from-literal=STORAGE_SECRET_KEY=$(openssl rand -hex 16)
-kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/minio.yaml -f k8s/service.yaml
+kubectl apply -f k8s/configmap.yaml -f k8s/postgres.yaml -f k8s/service.yaml
+sed "s|ghcr.io/mudst-2026-whatsss/event-registration-minio:latest|event-registration-minio:RELEASE.2025-10-15T17-29-55Z|" k8s/minio.yaml | kubectl apply -f -
 kubectl -n event-registration rollout status statefulset/postgres
+kubectl -n event-registration rollout status deployment/minio
 sed "s|ghcr.io/mudst-2026-whatsss/event-registration:latest|event-registration-api:local|" k8s/deployment.yaml | kubectl apply -f -
 kubectl -n event-registration rollout status deployment/event-registration-api
-kubectl apply -f k8s/frontend.yaml
+sed "s|ghcr.io/mudst-2026-whatsss/event-registration-frontend:latest|event-registration-frontend:local|" k8s/frontend.yaml | kubectl apply -f -
+kubectl -n event-registration rollout status deployment/event-registration-frontend
 kubectl -n event-registration get pods
 
 # Open the website at http://localhost:8090
@@ -141,6 +196,11 @@ kubectl -n event-registration port-forward service/event-registration-frontend 8
 Open the site through `http://localhost:8090` (or `http://<minikube ip>:30090` on Linux). The API only
 accepts sign-in requests from origins listed in `CORS_ALLOWED_ORIGINS` in `k8s/configmap.yaml`; add
 any other URL you use there.
+
+These Bash commands build inside Minikube and substitute all three local image names into the
+release manifests. Applying the unmodified frontend/MinIO manifests instead selects GHCR images,
+which require the published packages described above. For an existing cluster, reuse its Secret
+and persistent volumes rather than generating replacement database/storage credentials.
 
 For the Week 9 Ingress exercise, after deploying the services:
 
@@ -156,20 +216,31 @@ assets use root URLs on the same origin. The API is available at
 `http://localhost:16969/event-registration/api/health` and `/api/health`.
 The Ingress structure follows Class Week 8 and the path-routing task on Lab Week 9, page 29.
 
-GitHub Actions deploys automatically on every push to `main`: after tests pass and the image is
-pushed to GHCR, the `deploy-kubernetes` job starts Minikube inside the runner and loads the tested
-backend image. The build job checks out frontend `develop`, runs unit tests, the build, and Cypress,
-and records its commit SHA. Deployment checks out that exact frontend SHA, builds its image,
-creates the Secret, applies `k8s/`, and waits for the rollout. Health checks cover the API, frontend
-proxy, and classroom Ingress path. Both commit SHAs appear in the Actions run summary.
+The prepared GitHub Actions workflow has three stages. `build-and-test` runs backend tests, API
+tests, live MinIO checks, and the frontend unit/build/browser checks from frontend `develop`.
+It then tags the built images, starts them with only the delivery files, and tests actual signup,
+CSRF, login, role selection, and administrator endpoints before publishing those exact images.
+The three images share a release tag combining backend SHA, workflow run ID, and attempt.
+Backend and frontend source SHAs are recorded separately; reruns receive new image tags.
+
+`verify-delivery` uses a fresh runner to check anonymous GHCR access, download those release-tagged
+images, and repeat the image-only startup/authentication checks. Only after those checks pass
+does it promote the verified images to `latest` and upload the teacher package with its pinned
+`IMAGE_TAG` and generated `.env`. Pull requests run the candidate checks without publishing.
+
+On a push to `main` or a manual run, `deploy-kubernetes` waits for both jobs, starts Minikube,
+loads the verified release images, creates the Secret, applies `k8s/`, and waits for the rollout.
+Health checks cover the API, frontend proxy, and classroom Ingress path. Both source SHAs appear
+in the Actions run summary. These steps require the workflow changes to be pushed and
+successfully run; local preparation alone does not publish images or deploy.
 
 The CI Minikube cluster is temporary and ends with the runner. It demonstrates deployment for the
 course; it does not create a permanent hosted website. Use the commands above for the local demo.
 
-The Compose files build the pinned final MinIO community security release from its upstream Go tag
-because that release is not available as a public registry image. The first build takes longer;
-later builds use Docker cache. Keep ports 9000/9001 private and expose event images through the API
-or a trusted reverse proxy/CDN.
+The delivery pulls our MinIO image. The source build override builds the pinned final MinIO
+community security release from its upstream Go tag because that release is not available in
+the upstream public registry. The first source build takes longer; later builds use Docker cache.
+Keep ports 9000/9001 private and expose event images through the API or a trusted reverse proxy/CDN.
 
 Optional storage round-trip test while Compose MinIO is running:
 
@@ -218,5 +289,6 @@ V8 adds PostgreSQL table/column documentation without changing business data.
 - [`docs/api.md`](docs/api.md): current API contract and endpoint status
 - [`docs/database.md`](docs/database.md): schema ownership and table dictionary
 - [`docs/development.md`](docs/development.md): development and verification workflow
+- [`docs/docker-delivery.md`](docs/docker-delivery.md): self-contained instructor handout copied into release bundles
 - [`docs/docker-setup.md`](docs/docker-setup.md): clone-to-running Docker setup and database backup/restore
 - [`src/main/resources/db/migration/README.md`](src/main/resources/db/migration/README.md): migration history notes

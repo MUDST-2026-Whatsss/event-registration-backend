@@ -20,12 +20,8 @@ services:
 
   minio:
     # Build the last upstream security release; its public registry tag is unavailable.
-    image: event-registration-minio:RELEASE.2025-10-15T17-29-55Z
-    build:
-      context: .
-      dockerfile: docker/minio/Dockerfile
-      args:
-        MINIO_VERSION: RELEASE.2025-10-15T17-29-55Z
+    image: ghcr.io/mudst-2026-whatsss/event-registration-minio:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -38,7 +34,8 @@ services:
       - event_registration_minio_data:/data
 
   api:
-    build: .
+    image: ghcr.io/mudst-2026-whatsss/event-registration:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-event_registration}
@@ -87,20 +84,17 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
 
   frontend:
-    image: event-registration-frontend:local
-    build:
-      # Override with FRONTEND_DIR in .env if the frontend repo is somewhere else
-      context: ${FRONTEND_DIR:-../event-registration-frontend}
-      dockerfile: Dockerfile
+    image: ghcr.io/mudst-2026-whatsss/event-registration-frontend:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   event_registration_postgres_data:

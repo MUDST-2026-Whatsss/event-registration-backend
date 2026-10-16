@@ -37,8 +37,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          # Built from the event-registration-frontend repo (same image as docker-compose)
-          image: event-registration-frontend:local
+          # CI replaces latest with the same release tag used by image-only Compose.
+          image: ghcr.io/mudst-2026-whatsss/event-registration-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

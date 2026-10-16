@@ -30,5 +30,7 @@ COPY --from=builder /go/bin/minio /usr/local/bin/minio
 USER minio
 VOLUME ["/data"]
 EXPOSE 9000 9001
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=30 \
+    CMD wget -q -O /dev/null http://127.0.0.1:9000/minio/health/ready || exit 1
 ENTRYPOINT ["minio"]
 CMD ["server", "/data", "--console-address", ":9001"]

@@ -1,8 +1,49 @@
 # Docker setup, database backup, and restore
 
-คู่มือนี้ใช้สำหรับเริ่มระบบ frontend, API, PostgreSQL และ MinIO หลัง clone repository ใหม่
-รวมถึงสำรองฐานข้อมูลจาก managed PostgreSQL และนำข้อมูลกลับมาใช้กับ PostgreSQL ใน Docker
-เครื่อง local
+## เปิดจาก published images สำหรับการส่งงาน
+
+คู่มือสั้นสำหรับผู้รับงานอยู่ที่ [Docker delivery](docker-delivery.md) ชุดส่งมอบมี
+`docker-compose.yml`, `.env` ที่สร้าง secrets เฉพาะชุด, `versions.txt` และ README
+ค่า `IMAGE_TAG` ของ release รวม backend SHA, workflow run ID และ attempt เพื่อไม่ให้ rerun
+เขียนทับชุดก่อนหน้า ส่วน backend/frontend source SHAs ระบุแยกใน `versions.txt`
+เมื่อ release CI ผ่านและ application images ทั้ง 3 packages บน GHCR เปิด public แล้ว
+ผู้รับงานเปิด Docker Desktop และรันในโฟลเดอร์ส่งมอบได้ทันที:
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+ไม่ต้อง clone source, ติดตั้ง Java/Node.js หรือมี database dump เปิดเว็บที่
+`http://localhost:5173` หลัง services healthy หากยังเป็นงานเตรียมในเครื่องและ image
+ยังไม่ได้เผยแพร่ ผู้เตรียมงานต้อง build/tag images ให้ตรง `.env` แล้วทดสอบด้วย
+`docker compose up -d --pull never` การทดสอบนี้ยังไม่ยืนยันว่าเครื่องอื่น pull ได้
+
+`docker-compose.yml` เป็น image-only ส่วน `docker-compose.build.yml` เป็น override
+สำหรับ build จาก source ตาม flow ด้านล่าง ต้องใส่ทั้งสอง `-f` เมื่อใช้ source build
+อย่าใช้คำสั่ง base file อย่างเดียวเพื่ออัปเดต source เพราะจะเลือก published image
+แทน local build
+
+## First administrator
+
+ฐานข้อมูลใหม่ไม่มี account หรือกิจกรรม ให้สมัครผ่านหน้าเว็บก่อน บัญชีใหม่ใน
+`local` profile login ได้ทันทีและเริ่มที่ `USER` สำหรับสิทธิ์ดูแลให้ผู้ดูแล installation
+ทำ [ขั้นตอนสร้างผู้ดูแลคนแรก](docker-delivery.md#สร้างผู้ดูแลคนแรกครั้งเดียว)
+ในฐานข้อมูล local เพียงครั้งเดียว คำสั่งมี guard ว่า account เป็น ACTIVE และยังไม่มี
+active SUPER_ADMIN แล้วต้อง logout/login ใหม่ ไม่มี password กลางฝังอยู่ใน image
+หลังจากนั้นกำหนด role เพิ่มจากหน้า Users ตามปกติ
+
+การ reset password ผ่านอีเมลต้องตั้ง SMTP จริง แต่ signup/login ใน classroom
+local profile ไม่ต้องพึ่งอีเมล QR payment simulation ยังใช้ตามขอบเขตงานเดิม
+
+## ข้อมูลเดิมและการ build จาก source
+
+ใช้ `.env` และ volume เดิมเมื่อต้องการเก็บข้อมูล ห้ามนำ secrets จาก delivery ใหม่
+ไปแทนค่าของ installation ที่มีข้อมูลโดยตรง `docker compose down` เก็บ named volumes
+ส่วน `down -v` ลบข้อมูล PostgreSQL และ MinIO การอัปเดต image ไม่ต้องใช้ `-v`
+
+ส่วนถัดไปเป็น flow สำหรับผู้พัฒนาที่มี source code รวมถึงการสำรอง managed PostgreSQL
+และ restore เข้าฐานข้อมูล local เมื่อจำเป็น ไม่จำเป็นสำหรับการเปิดชุดส่งมอบใหม่
 
 | ระบบปฏิบัติการ | Terminal | ขั้นตอนที่ใช้ |
 | --- | --- | --- |
@@ -10,7 +51,7 @@
 | Windows 10/11 | PowerShell 5.1+ หรือ PowerShell 7 | Flow Windows PowerShell |
 | Windows + WSL2 | Shell ใน WSL | Flow macOS/Linux หลังเปิด Docker Desktop WSL integration |
 
-## ติดตั้งระบบพร้อม database dump — macOS/Linux
+## Source build พร้อม database dump — macOS/Linux
 
 ส่วนนี้เป็น flow หลักสำหรับติดตั้งระบบจาก source code และไฟล์ database dump ทำตามจากบนลงล่าง
 จนเปิดหน้าเว็บและ login ได้
@@ -90,27 +131,27 @@ openssl rand -base64 48
 - ใช้ค่าสุ่มอีกชุดเป็น `STORAGE_SECRET_KEY`
 - คง `SPRING_PROFILES_ACTIVE=local`
 - คง `COOKIE_SECURE=false` สำหรับ `http://localhost`
-- คง `CORS_ALLOWED_ORIGINS=http://localhost:5173`
+- คง origin localhost/127.0.0.1 ที่ใช้จริงใน `CORS_ALLOWED_ORIGINS`
 
 ห้ามใส่ `DB_URL`, `DB_USERNAME` หรือ `DB_PASSWORD` ของ server ใน `.env.local`
 
 ตรวจ configuration ก่อนสร้าง container:
 
 ```bash
-docker compose --env-file .env.local config --quiet
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml config --quiet
 ```
 
 ### D. เปิด PostgreSQL และ MinIO local
 
 ```bash
-docker compose --env-file .env.local up -d --build postgres minio
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 
 set -a
 source .env.local
 set +a
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   pg_isready --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"
 ```
 
@@ -124,15 +165,15 @@ docker compose --env-file .env.local exec -T postgres \
 ```bash
 BACKUP_FILE="event-registration-server-20260925-210801.dump"
 
-docker compose --env-file .env.local stop api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml stop api
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   dropdb --if-exists --force --username="$POSTGRES_USER" "$POSTGRES_DB"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   createdb --username="$POSTGRES_USER" "$POSTGRES_DB"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   pg_restore \
     --username="$POSTGRES_USER" \
     --dbname="$POSTGRES_DB" \
@@ -147,8 +188,8 @@ docker compose --env-file .env.local exec -T postgres \
 ### F. เปิด API และตรวจ database
 
 ```bash
-docker compose --env-file .env.local up -d api
-docker compose --env-file .env.local logs -f api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs -f api
 ```
 
 เมื่อเห็น log ว่า application started ให้กด `Ctrl+C`; container จะยังทำงานอยู่ แล้วตรวจ:
@@ -157,11 +198,11 @@ docker compose --env-file .env.local logs -f api
 curl --fail http://localhost:8080/api/health
 curl --fail http://localhost:8080/actuator/health
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT role_code FROM auth_roles ORDER BY role_code;"
 ```
@@ -173,8 +214,8 @@ Migration ทุกแถวต้องเป็น `success = true` และ�
 จากโฟลเดอร์ backend ให้ build และเปิด frontend container:
 
 ```bash
-docker compose --env-file .env.local up -d --build frontend
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build frontend
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 ```
 
 Compose คาดว่า repository `event-registration-frontend` อยู่ข้าง repository backend ตามขั้นตอน
@@ -184,7 +225,7 @@ Clone ด้านบน เปิด `http://localhost:5173` แล้วทด
 หากกำลังแก้ frontend และต้องการ Vite hot reload ให้หยุดเฉพาะ frontend container แล้วรัน dev server:
 
 ```bash
-docker compose --env-file .env.local stop frontend
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml stop frontend
 cd ../event-registration-frontend
 cp .env.example .env
 npm ci
@@ -196,7 +237,7 @@ User ที่อยู่ใน dump ใช้ password เดิม หาก�
 
 ### H. Checklist ระบบพร้อมใช้งาน
 
-- `docker compose --env-file .env.local ps` แสดง PostgreSQL, MinIO, API และ frontend ทำงานอยู่
+- `docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps` แสดง PostgreSQL, MinIO, API และ frontend ทำงานอยู่
 - PostgreSQL เป็น `healthy`
 - API health ทั้งสอง URL ตอบสำเร็จ
 - Flyway history ไม่มี migration ที่ล้มเหลว
@@ -207,7 +248,7 @@ User ที่อยู่ใน dump ใช้ password เดิม หาก�
 ถ้าต้องใช้รูปเดิม ต้อง restore MinIO bucket backup เพิ่มด้วย การ restore database อย่างเดียวทำให้
 event metadata อยู่ครบ แต่ URL รูปเดิมอาจตอบ `404` เพราะ object ไม่ได้อยู่ใน MinIO local
 
-## ติดตั้งระบบพร้อม database dump — Windows PowerShell
+## Source build พร้อม database dump — Windows PowerShell
 
 ใช้ PowerShell เปิดจากโฟลเดอร์ที่ต้องการเก็บ project คำสั่งส่วนนี้ไม่ต้องใช้ WSL, Git Bash หรือ
 คำสั่ง Unix และหลีกเลี่ยงการ pipe ไฟล์ dump แบบ binary ผ่าน PowerShell
@@ -298,7 +339,7 @@ notepad .env.local
 `STORAGE_SECRET_KEY` คงค่า local profile, cookie และ CORS ตามหัวข้อ macOS/Linux จากนั้นตรวจ:
 
 ```powershell
-docker compose --env-file .env.local config --quiet
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml config --quiet
 if ($LASTEXITCODE -ne 0) {
     throw "Docker Compose configuration is invalid."
 }
@@ -307,10 +348,10 @@ if ($LASTEXITCODE -ne 0) {
 ### D. เปิด PostgreSQL และ MinIO local
 
 ```powershell
-docker compose --env-file .env.local up -d --build postgres minio
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'pg_isready --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"'
 ```
 
@@ -322,21 +363,21 @@ docker compose --env-file .env.local exec -T postgres `
 ไม่ต้อง import `.env.local` เข้า PowerShell
 
 ```powershell
-docker compose --env-file .env.local stop api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml stop api
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'dropdb --if-exists --force --username="$POSTGRES_USER" "$POSTGRES_DB"'
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'createdb --username="$POSTGRES_USER" "$POSTGRES_DB"'
 
-docker compose --env-file .env.local cp `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml cp `
   "backups/$BackupFile" postgres:/tmp/event-registration.dump
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'pg_restore --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --no-owner --no-privileges --exit-on-error /tmp/event-registration.dump'
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   rm -f /tmp/event-registration.dump
 ```
 
@@ -346,8 +387,8 @@ stream ทำให้ archive เสีย การ copy เข้า containe
 ### F. เปิดและตรวจ API
 
 ```powershell
-docker compose --env-file .env.local up -d api
-docker compose --env-file .env.local logs -f api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs -f api
 ```
 
 เมื่อ application started ให้กด `Ctrl+C` แล้วตรวจ health:
@@ -360,10 +401,10 @@ docker compose --env-file .env.local logs -f api
 ทั้งสองคำสั่งต้องตอบ `200` จากนั้นตรวจ migration และ role:
 
 ```powershell
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"'
 
-docker compose --env-file .env.local exec -T postgres `
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres `
   sh -c 'psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --command="SELECT role_code FROM auth_roles ORDER BY role_code;"'
 ```
 
@@ -372,8 +413,8 @@ docker compose --env-file .env.local exec -T postgres `
 จากโฟลเดอร์ backend:
 
 ```powershell
-docker compose --env-file .env.local up -d --build frontend
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build frontend
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 ```
 
 เปิด `http://localhost:5173` แล้วทดสอบ register/login หากต้องการ Vite hot reload ให้หยุด
@@ -384,20 +425,20 @@ frontend container แล้วเปิด PowerShell อีกหน้าต�
 
 ```powershell
 # เริ่มระบบ
-docker compose --env-file .env.local up -d
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d
 
 # ดูสถานะและ log
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs --tail=200 frontend api postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs --tail=200 frontend api postgres minio
 
 # หยุด container โดยเก็บข้อมูลใน volume
-docker compose --env-file .env.local down
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml down
 ```
 
 ห้ามเติม `-v` ในคำสั่ง `down` หากยังไม่มี backup เพราะจะลบ PostgreSQL และ MinIO local
 ถ้าใช้ WSL ให้เปิด Docker Desktop WSL integration แล้วทำตาม flow macOS/Linux แทน
 
-## 1. สิ่งที่ต้องติดตั้ง
+## 1. สิ่งที่ต้องติดตั้งสำหรับ source build
 
 - Git
 - Docker Desktop พร้อม Docker Compose v2
@@ -437,13 +478,13 @@ cp .env.example .env.local
 
 | ไฟล์ | ใช้กับ | Compose file |
 | --- | --- | --- |
-| `.env.local` | Frontend + API + PostgreSQL + MinIO ใน Docker เครื่อง local | `docker-compose.yml` |
+| `.env.local` | Source build: frontend + API + PostgreSQL + MinIO local | `docker-compose.yml` + `docker-compose.build.yml` |
 | `.env.server` | Frontend + API/MinIO ในเครื่อง local แต่ต่อ managed PostgreSQL | `docker-compose.server.yml` |
 
 `.env.server` ต้องมี `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SCHEMA` และค่าระบบอื่นจาก
 `.env.example` แต่ไม่ต้องมี `POSTGRES_*` เพราะ Compose ชุดนี้ไม่สร้าง PostgreSQL local
 
-## 3. ตั้งแต่ clone จนใช้งานระบบ local ได้
+## 3. ตั้งแต่ clone จนใช้งาน source build ได้
 
 ลำดับที่แนะนำคือเริ่ม infrastructure ก่อน ตรวจ PostgreSQL แล้วจึงเริ่ม API วิธีนี้ทำให้แยกได้
 ทันทีว่าปัญหาเกิดจาก database, migration หรือ application
@@ -453,7 +494,7 @@ cp .env.example .env.local
 ตรวจสอบ Compose configuration ก่อนเริ่ม:
 
 ```bash
-docker compose --env-file .env.local config --quiet
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml config --quiet
 ```
 
 คำสั่งต้องจบโดยไม่มี error หากพบข้อความ `required variable ... is missing` ให้เติมค่านั้นใน
@@ -462,8 +503,8 @@ docker compose --env-file .env.local config --quiet
 ### 3.2 เริ่ม PostgreSQL และ MinIO
 
 ```bash
-docker compose --env-file .env.local up -d --build postgres minio
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 ```
 
 รอจน service `postgres` แสดงสถานะ `healthy` จากนั้นทดสอบการเชื่อมต่อ:
@@ -473,7 +514,7 @@ set -a
 source .env.local
 set +a
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   pg_isready --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"
 ```
 
@@ -494,9 +535,9 @@ UUID/Flyway ปัจจุบัน
 ### 3.4 เริ่ม API และให้ Flyway เตรียม schema
 
 ```bash
-docker compose --env-file .env.local up -d api
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs -f api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs -f api
 ```
 
 Flyway จะสร้าง/อัปเดต schema อัตโนมัติเมื่อ API เริ่มทำงาน ส่วน Hibernate จะตรวจ schema
@@ -506,15 +547,15 @@ Flyway จะสร้าง/อัปเดต schema อัตโนมัต�
 ### 3.5 ตรวจ migration, table และ master role
 
 ```bash
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT count(*) AS application_tables FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT role_code FROM auth_roles ORDER BY role_code;"
 ```
@@ -545,8 +586,8 @@ Console ยังไม่มี bucket ทันทีหลังเริ่�
 จากโฟลเดอร์ backend โดยสมมติว่า frontend อยู่ข้าง backend ในโฟลเดอร์เดียวกัน:
 
 ```bash
-docker compose --env-file .env.local up -d --build frontend
-docker compose --env-file .env.local ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build frontend
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
 ```
 
 เปิด `http://localhost:5173/register` แล้วสมัคร user จากหน้าเว็บ จากนั้น login ได้ทันที เพราะ
@@ -561,7 +602,7 @@ set -a
 source .env.local
 set +a
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT count(*) AS users FROM auth_users; SELECT count(*) AS participants FROM participants;"
 ```
@@ -573,14 +614,14 @@ docker compose --env-file .env.local exec -T postgres \
 เริ่มระบบครั้งถัดไป:
 
 ```bash
-docker compose --env-file .env.local up -d
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d
 ```
 
 ดู log หรือหยุดระบบ:
 
 ```bash
-docker compose --env-file .env.local logs --tail=200 frontend api postgres minio
-docker compose --env-file .env.local down
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs --tail=200 frontend api postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml down
 ```
 
 `docker compose down` ไม่ลบข้อมูลใน named volumes แต่ `docker compose down -v` จะลบทั้ง
@@ -735,16 +776,16 @@ set +a
 
 BACKUP_FILE="event-registration-server-20260925-210801.dump"
 
-docker compose --env-file .env.local up -d postgres minio
-docker compose --env-file .env.local stop api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d postgres minio
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml stop api
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   dropdb --if-exists --force --username="$POSTGRES_USER" "$POSTGRES_DB"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   createdb --username="$POSTGRES_USER" "$POSTGRES_DB"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   pg_restore \
     --username="$POSTGRES_USER" \
     --dbname="$POSTGRES_DB" \
@@ -753,8 +794,8 @@ docker compose --env-file .env.local exec -T postgres \
     --exit-on-error \
   < "backups/$BACKUP_FILE"
 
-docker compose --env-file .env.local up -d api
-docker compose --env-file .env.local logs -f api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml up -d --build api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs -f api
 ```
 
 บน Windows PowerShell ให้ใช้หัวข้อ **E. Restore dump ลง local PostgreSQL** ใน flow Windows
@@ -763,11 +804,11 @@ docker compose --env-file .env.local logs -f api
 ตรวจ migration และจำนวน table หลัง restore:
 
 ```bash
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
 
-docker compose --env-file .env.local exec -T postgres \
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml exec -T postgres \
   psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
   --command="SELECT count(*) AS application_tables FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
 ```
@@ -788,7 +829,7 @@ Console ต่อสาธารณะ
 ยืนยันว่าใช้ `--env-file` ถูกโหมดและไม่ได้ปล่อย placeholder ไว้:
 
 ```bash
-docker compose --env-file .env.local config --quiet
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml config --quiet
 ```
 
 ### API ต่อ PostgreSQL ไม่ได้
@@ -796,8 +837,8 @@ docker compose --env-file .env.local config --quiet
 ตรวจ health และ log:
 
 ```bash
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs --tail=200 postgres api
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml ps
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.build.yml logs --tail=200 postgres api
 ```
 
 ใน local Compose ค่า `DB_URL` ภายใน container ถูกกำหนดเป็น host `postgres` อัตโนมัติ ไม่ใช่

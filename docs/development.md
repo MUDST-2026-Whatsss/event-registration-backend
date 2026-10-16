@@ -1,14 +1,48 @@
 # Backend development workflow
 
-## Local database mode
+## Published images or source builds
+
+The base `docker-compose.yml` contains images only. After the release CI has published all three
+application images and their GHCR packages are public, the instructor can extract the delivery
+artifact, keep its generated `.env`, and run `docker compose up -d`. No Java, Node.js, Git, or source
+checkout is needed for that mode. The artifact's `IMAGE_TAG` pins a release made from the backend
+SHA, workflow run ID, and attempt, so reruns do not replace earlier delivery tags. Backend and
+frontend source SHAs are recorded separately in `versions.txt`.
+
+Workflow/package publication is a separate step; uncommitted local changes do not create a release.
+To preview candidate images already built/tagged locally, use the preview environment and
+`docker compose up -d --pull never`.
+
+## Source build with local database
 
 1. Copy `.env.example` to `.env`.
 2. Set strong local database, JWT, and `STORAGE_*` secret values.
-3. Run `docker compose up -d`.
-4. Follow startup with `docker compose logs -f api`.
+3. Clone the frontend on `develop` beside this repository, or set `FRONTEND_DIR`.
+4. Build the current source and start the stack:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+   ```
+
+5. Follow startup with `docker compose -f docker-compose.yml -f docker-compose.build.yml logs -f api`.
+
+Keep both `-f` arguments when managing source builds. The override adds build contexts and local
+image settings; a command using only the base file selects published images instead.
+
+For Vite development, keep the API/storage running and start `npm run dev` in the frontend. Its
+`/api` proxy defaults to `http://localhost:8080`; no frontend `.env` is required for that default.
+The backend allows localhost/127.0.0.1 on ports 5173/5174 by default. An existing
+`CORS_ALLOWED_ORIGINS` override must include the exact Vite URL.
 
 MinIO data survives container recreation in `event_registration_minio_data`. Its S3 API and admin
 Console are bound to `127.0.0.1:9000` and `127.0.0.1:9001`; do not expose the Console publicly.
+The project name and PostgreSQL/MinIO named volumes remain the same when switching between source
+builds and release images. Keep existing secrets and do not use `down -v` to update the app.
+
+A new database has no login accounts. Register a user, then follow the guarded
+[first administrator setup](docker-setup.md#first-administrator) once to access administration.
+Use the existing administrator screens for later role changes. Actual password-reset emails
+require configured SMTP; the local profile supports signup/login without SMTP.
 
 ## Managed database mode
 
