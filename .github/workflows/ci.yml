@@ -32,6 +32,17 @@ jobs:
       - name: Build and run unit + integration tests
         run: ./mvnw -B verify
 
+      - name: Publish code coverage summary
+        run: |
+          # jacoco.csv columns: 6/7 branch missed/covered, 8/9 line missed/covered
+          awk -F, 'NR > 1 { bm += $6; bc += $7; lm += $8; lc += $9 }
+            END {
+              printf "## Backend code coverage (JaCoCo)\n\n"
+              printf "| Metric | Covered | Total | Percent |\n|---|---|---|---|\n"
+              printf "| Lines | %d | %d | %.1f%% |\n", lc, lm + lc, 100 * lc / (lm + lc)
+              printf "| Branches | %d | %d | %.1f%% |\n", bc, bm + bc, 100 * bc / (bm + bc)
+            }' target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -122,6 +133,7 @@ jobs:
           path: |
             target/surefire-reports
             target/failsafe-reports
+            target/site/jacoco
 
   deploy-kubernetes:
     needs: build-and-test
