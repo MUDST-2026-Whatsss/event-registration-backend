@@ -68,6 +68,22 @@ The build must fail if migrations cannot apply or Hibernate mappings do not matc
 tests are included in the normal build. The optional live storage round-trip test is documented in
 the root README and runs only when `RUN_MINIO_IT=true`.
 
+### API end-to-end tests (Cypress)
+
+The Cypress suite in `cypress/e2e` calls the real API, so start the local Compose stack first:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio api
+npm ci
+npm run test:e2e
+```
+
+Registration only grants the USER role, so `cy.loginAs` creates fixed `e2e_*@example.com`
+accounts and inserts the ADMIN or SUPER_ADMIN role through `docker compose exec postgres psql`.
+Run it only against a disposable local database, never a shared or production one. Set
+`COMPOSE_PROJECT_NAME` when the stack was started under a different Compose project name. Login
+sessions are cached across specs to stay under the login rate limit.
+
 ## Coding checklist
 
 - Add request/response DTOs and Jakarta validation.
