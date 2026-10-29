@@ -50,6 +50,8 @@ public enum ErrorCode {
     REGISTRATION_NOT_CANCELLABLE(HttpStatus.CONFLICT, "This registration can no longer be cancelled."),
     PAID_REGISTRATION_UNAVAILABLE(HttpStatus.CONFLICT, "Registration for paid events is not available yet."),
     INVALID_REGISTRATION_STATE(HttpStatus.CONFLICT, "This registration cannot confirm payment in its current state."),
+    ALREADY_CHECKED_IN(HttpStatus.CONFLICT, "This registration has already been checked in."),
+    REGISTRATION_NOT_CHECKABLE(HttpStatus.CONFLICT, "This registration cannot be checked in."),
 
     INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "The uploaded file is not a supported image."),
     MEDIA_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested media was not found."),

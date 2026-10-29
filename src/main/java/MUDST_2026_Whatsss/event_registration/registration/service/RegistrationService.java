@@ -23,6 +23,7 @@ import MUDST_2026_Whatsss.event_registration.registration.repository.Registratio
 import MUDST_2026_Whatsss.event_registration.registration.repository.RegistrationStatusHistoryRepository;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
 import org.springframework.data.domain.Page;
@@ -219,6 +220,35 @@ public class RegistrationService {
             registrationRepository.save(registration);
             recordTransition(registration, previous, actorUserId, reason);
         }
+    }
+
+    /** Marks a confirmed attendee as present, matched by the registration number on their QR code. */
+    @Transactional
+    public AdminRegistrationResponse checkIn(
+            UUID eventId, CheckInRequest request, AuthenticatedUser principal) {
+        Event event = eventRepository.findByIdForUpdate(eventId).orElseThrow(EventNotFoundException::new);
+        requireEventScope(event, principal);
+        if (event.getStatus() != EventStatus.PUBLISHED) {
+            throw new ApiException(ErrorCode.INVALID_EVENT_STATE);
+        }
+        String registrationNumber = request.registrationNumber().trim().toUpperCase();
+        // A number from another event is reported as missing, like an unknown number.
+        Registration registration = registrationRepository
+                .findByEvent_EventIdAndRegistrationNumber(eventId, registrationNumber)
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        if (registration.getStatus() == RegistrationStatus.CHECKED_IN) {
+            throw new ApiException(ErrorCode.ALREADY_CHECKED_IN);
+        }
+        if (registration.getStatus() != RegistrationStatus.CONFIRMED) {
+            throw new ApiException(ErrorCode.REGISTRATION_NOT_CHECKABLE);
+        }
+        Instant now = Instant.now();
+        registration.setStatus(RegistrationStatus.CHECKED_IN);
+        registration.setCheckedInAt(now);
+        registration.setCheckedInByUserId(principal.userId());
+        registration = registrationRepository.saveAndFlush(registration);
+        recordTransition(registration, RegistrationStatus.CONFIRMED, principal.userId(), null);
+        return toAdminResponse(registration);
     }
 
     @Transactional(readOnly = true)

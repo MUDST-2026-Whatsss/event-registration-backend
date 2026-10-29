@@ -21,6 +21,8 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
 
     Optional<Registration> findByEvent_EventIdAndParticipantId(UUID eventId, UUID participantId);
 
+    Optional<Registration> findByEvent_EventIdAndRegistrationNumber(UUID eventId, String registrationNumber);
+
     List<Registration> findByEvent_EventIdAndStatusIn(
             UUID eventId, Collection<RegistrationStatus> statuses);
 

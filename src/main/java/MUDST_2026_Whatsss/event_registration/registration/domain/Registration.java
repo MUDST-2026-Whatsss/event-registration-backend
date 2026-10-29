@@ -86,6 +86,9 @@ public class Registration {
     @Column(name = "checked_in_at")
     private Instant checkedInAt;
 
+    @Column(name = "checked_in_by_user_id")
+    private UUID checkedInByUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
