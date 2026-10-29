@@ -58,6 +58,7 @@ Base path: `/api/v1`
 | PUT | `/api/v1/admin/events/{eventId}/admins` | SUPER_ADMIN | Active; preserves event owner |
 | GET | `/api/v1/admin/users` | SUPER_ADMIN | Active; paginated search/status/role filters |
 | GET | `/api/v1/admin/users/stats` | SUPER_ADMIN | Active |
+| GET | `/api/v1/admin/stats` | SUPER_ADMIN | Active; platform-wide event and user totals |
 | GET | `/api/v1/admin/users/{userId}` | SUPER_ADMIN | Active |
 | PATCH | `/api/v1/admin/users/{userId}/status` | SUPER_ADMIN | Active; disabling revokes sessions |
 | PUT | `/api/v1/admin/users/{userId}/roles` | SUPER_ADMIN | Active; replaces assigned role set and revokes existing sessions |
