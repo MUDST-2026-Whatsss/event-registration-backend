@@ -9,6 +9,9 @@ metadata:
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/proxy-body-size: 3m
+    # Live seat sockets stay open while an event page is; the default 60s would cut them off.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
@@ -29,6 +32,9 @@ metadata:
   namespace: event-registration
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 3m
+    # Live seat sockets stay open while an event page is; the default 60s would cut them off.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:

@@ -124,6 +124,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/**").permitAll()
+                        // Live seat counts are as public as the event pages that show them.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ws/seats").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/events/*/guest-registrations",
                                 "/api/v1/guest-registrations/lookup").permitAll()

@@ -13,11 +13,15 @@ data:
   JWT_ISSUER: event-registration
   ACCESS_TOKEN_TTL: 15m
   REFRESH_TOKEN_TTL: 7d
+  NO_SHOW_GRACE_PERIOD: PT6H
+  NO_SHOW_SWEEP_INTERVAL: PT5M
+  NO_SHOW_SWEEP_INITIAL_DELAY: PT1M
   COOKIE_SECURE: "false"
   COOKIE_SAME_SITE: Lax
   # Classroom Ingress on port 80/16969, plus the existing local entry points.
   CORS_ALLOWED_ORIGINS: http://localhost,http://127.0.0.1,http://localhost:16969,http://127.0.0.1:16969,http://localhost:8090,http://127.0.0.1:8090,http://192.168.49.2:30090,http://localhost:5173
   STORAGE_ENABLED: "true"
+  SEAT_POLL_INTERVAL: PT2S
   STORAGE_ENDPOINT: http://minio:9000
   STORAGE_BUCKET: event-registration
   # Readiness probe waits for the database and MinIO too
