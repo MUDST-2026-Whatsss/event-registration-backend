@@ -8,6 +8,7 @@ import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
 import MUDST_2026_Whatsss.event_registration.event.service.AdminEventService;
 import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestRegistrationRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -78,6 +79,49 @@ class RegistrationConcurrencyIT extends PostgresIntegrationTest {
             }
             assertThat(confirmed).isEqualTo(1);
             assertThat(full).isEqualTo(CONTENDERS - 1);
+            assertThat(eventRepository.countActiveRegistrations(eventId)).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+            deleteEvent(eventId);
+        }
+    }
+
+    @Test
+    void memberAndGuestUsingTheSameEmailCannotTakeTwoSeatsConcurrently() throws Exception {
+        var fixtures = new RegistrationFixtures(jdbcTemplate, adminEventService, eventRepository);
+        UUID eventId = fixtures.publishedEvent(fixtures.admin(), "Concurrent email duplicate", 5);
+        var member = fixtures.participant("email-racer", "Email", "Racer");
+        String email = "race-" + UUID.randomUUID() + "@example.test";
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Future<ErrorCode>> outcomes = new ArrayList<>();
+        try {
+            outcomes.add(pool.submit(() -> {
+                start.await();
+                try {
+                    service.register(eventId, new CreateRegistrationRequest(null, email, null, true), member);
+                    return null;
+                } catch (ApiException exception) {
+                    return exception.getErrorCode();
+                }
+            }));
+            outcomes.add(pool.submit(() -> {
+                start.await();
+                try {
+                    service.registerGuest(eventId, new GuestRegistrationRequest(
+                            "Guest Racer", "  " + email.toUpperCase(java.util.Locale.ROOT) + "  ", null, true));
+                    return null;
+                } catch (ApiException exception) {
+                    return exception.getErrorCode();
+                }
+            }));
+            start.countDown();
+            List<ErrorCode> results = new ArrayList<>();
+            for (Future<ErrorCode> outcome : outcomes) results.add(outcome.get(30, TimeUnit.SECONDS));
+            assertThat(results.stream().filter(java.util.Objects::isNull).count()).isEqualTo(1);
+            assertThat(results.stream().filter(java.util.Objects::nonNull).toList())
+                    .hasSize(1).allMatch(code -> code == ErrorCode.ALREADY_REGISTERED
+                            || code == ErrorCode.GUEST_ALREADY_REGISTERED);
             assertThat(eventRepository.countActiveRegistrations(eventId)).isEqualTo(1);
         } finally {
             pool.shutdownNow();

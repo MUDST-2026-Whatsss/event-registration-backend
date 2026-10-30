@@ -140,6 +140,70 @@ class GuestRegistrationIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void guestCannotReuseAMembersAttendeeEmail() {
+        UUID eventId = fixtures.publishedEvent(admin, "Member then guest duplicate", 3);
+        var member = fixtures.participant("email-owner", "Email", "Owner");
+        service.register(eventId, new CreateRegistrationRequest(null, "shared@example.test", null, true), member);
+
+        assertError(() -> service.registerGuest(eventId, guest("Duplicate", "  SHARED@Example.test ")),
+                ErrorCode.GUEST_ALREADY_REGISTERED);
+        assertThat(eventRepository.countActiveRegistrations(eventId)).isEqualTo(1);
+    }
+
+    @Test
+    void memberCannotReuseAnUnlinkedGuestsEmailOrAnotherMembersEmail() {
+        UUID eventId = fixtures.publishedEvent(admin, "Guest then member duplicate", 3);
+        service.registerGuest(eventId, guest("First Guest", "shared@example.test"));
+        var member = fixtures.participant("different-account", "Different", "Account");
+
+        assertError(() -> service.register(eventId,
+                new CreateRegistrationRequest(null, "  SHARED@Example.test ", null, true), member),
+                ErrorCode.ALREADY_REGISTERED);
+
+        service.register(eventId, new CreateRegistrationRequest(null, "member@example.test", null, true), member);
+        var other = fixtures.participant("another-account", "Another", "Account");
+        assertError(() -> service.register(eventId,
+                new CreateRegistrationRequest(null, "MEMBER@example.test", null, true), other),
+                ErrorCode.ALREADY_REGISTERED);
+        assertThat(eventRepository.countActiveRegistrations(eventId)).isEqualTo(2);
+    }
+
+    @Test
+    void linkedGuestEmailStillBlocksANewGuestRegistration() {
+        UUID eventId = fixtures.publishedEvent(admin, "Linked guest duplicate", 3);
+        String email = uniqueEmail();
+        var guest = service.registerGuest(eventId, guest("Future Member", email));
+        authService.register(new RegisterRequest(email, "Password123", "Future", "Member", "0812345678"));
+
+        assertError(() -> service.registerGuest(eventId, guest("Duplicate", email.toUpperCase())),
+                ErrorCode.GUEST_ALREADY_REGISTERED);
+        assertThat(jdbcTemplate.queryForObject(
+                "select participant_id is not null from registrations where registration_id = ?",
+                Boolean.class, guest.registrationId())).isTrue();
+        assertThat(eventRepository.countActiveRegistrations(eventId)).isEqualTo(1);
+    }
+
+    @Test
+    void sameEmailMayRegisterForAnotherEventOrAfterCancellationAndPhonesRemainReusable() {
+        UUID first = fixtures.publishedEvent(admin, "Email scope A", 4);
+        UUID second = fixtures.publishedEvent(admin, "Email scope B", 4);
+        var member = fixtures.participant("cancelled-email-owner", "Email", "Owner");
+        var own = service.register(first,
+                new CreateRegistrationRequest(null, "shared@example.test", "0812345678", true), member);
+        service.registerGuest(second, new GuestRegistrationRequest("Other Event", "SHARED@example.test", "0812345678", true));
+        service.registerGuest(first, new GuestRegistrationRequest("Same Phone", "different@example.test", "0812345678", true));
+        service.cancel(own.registrationId(), member);
+        service.registerGuest(first, guest("Reuse Cancelled Email", "SHARED@example.test"));
+
+        // The cancelled member row cannot be reactivated while the guest holds that email.
+        assertError(() -> service.register(first,
+                new CreateRegistrationRequest(null, "shared@example.test", null, true), member),
+                ErrorCode.ALREADY_REGISTERED);
+        assertThat(eventRepository.countActiveRegistrations(first)).isEqualTo(2);
+        assertThat(eventRepository.countActiveRegistrations(second)).isEqualTo(1);
+    }
+
+    @Test
     void guestFindsTheTicketOnlyWithTheMatchingEmail() throws Exception {
         UUID eventId = fixtures.publishedEvent(admin, "Guest lookup", 3);
         String number = service.registerGuest(eventId, guest("Lookup", "lookup@example.test"))
@@ -231,7 +295,12 @@ class GuestRegistrationIT extends PostgresIntegrationTest {
         AuthenticatedUser member = member(userId, email);
         UUID eventId = fixtures.publishedEvent(admin, "Already held", 3);
         var own = service.register(eventId, new CreateRegistrationRequest(null, null, null, true), member);
-        var guestRegistration = service.registerGuest(eventId, guest("Double Booked", email));
+        // Legacy duplicates can predate the cross-flow email check; linking must still be safe.
+        UUID guestRegistrationId = jdbcTemplate.queryForObject("""
+                insert into registrations (event_id, registration_number, registered_as_guest,
+                    status, attendee_name, attendee_email, registered_at, confirmed_at, consent_accepted_at)
+                values (?, 'REG-LEGACY0001', true, 'CONFIRMED', 'Double Booked', ?, now(), now(), now())
+                returning registration_id""", UUID.class, eventId, email);
 
         authService.login(new LoginRequest(email, "Password123"), CONTEXT);
 
@@ -239,7 +308,7 @@ class GuestRegistrationIT extends PostgresIntegrationTest {
                 .containsExactly(own.registrationId());
         assertThat(jdbcTemplate.queryForObject(
                 "select participant_id is null from registrations where registration_id = ?",
-                Boolean.class, guestRegistration.registrationId())).isTrue();
+                Boolean.class, guestRegistrationId)).isTrue();
     }
 
     private static GuestRegistrationRequest guest(String name, String email) {

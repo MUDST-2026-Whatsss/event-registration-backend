@@ -27,11 +27,10 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
     @Query("""
             select count(r) > 0 from Registration r
             where r.event.eventId = :eventId
-              and r.participantId is null
-              and lower(r.attendeeEmail) = :normalizedEmail
+              and lower(trim(r.attendeeEmail)) = :normalizedEmail
               and r.status in :statuses
             """)
-    boolean existsGuestRegistration(
+    boolean existsActiveRegistrationByEmail(
             @Param("eventId") UUID eventId,
             @Param("normalizedEmail") String normalizedEmail,
             @Param("statuses") Collection<RegistrationStatus> statuses);

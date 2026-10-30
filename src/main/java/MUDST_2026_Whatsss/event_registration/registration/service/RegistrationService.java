@@ -106,6 +106,12 @@ public class RegistrationService {
             }
             throw new ApiException(ErrorCode.ALREADY_REGISTERED);
         }
+        String email = firstNonBlank(request.attendeeEmail(), principal.email());
+        if (registrationRepository.existsActiveRegistrationByEmail(
+                eventId, normalizeEmail(email), RegistrationStatus.ACTIVE)) {
+            throw new ApiException(ErrorCode.ALREADY_REGISTERED,
+                    "This email address is already registered for this event.");
+        }
         requireSeat(event);
 
         RegistrationStatus previous = registration == null ? null : registration.getStatus();
@@ -119,7 +125,7 @@ public class RegistrationService {
         registration.setRegisteredByUserId(principal.userId());
         registration.setStatus(paid ? RegistrationStatus.PENDING_PAYMENT : RegistrationStatus.CONFIRMED);
         registration.setAttendeeName(attendeeName(request, participant, principal));
-        registration.setAttendeeEmail(firstNonBlank(request.attendeeEmail(), principal.email()));
+        registration.setAttendeeEmail(email);
         registration.setAttendeePhone(attendeePhone(request, participant));
         registration.setConsentAcceptedAt(now);
         registration.setRegisteredAt(now);
@@ -148,7 +154,7 @@ public class RegistrationService {
             throw new ApiException(ErrorCode.GUEST_PAID_REGISTRATION_UNAVAILABLE);
         }
         String email = request.attendeeEmail().trim();
-        if (registrationRepository.existsGuestRegistration(
+        if (registrationRepository.existsActiveRegistrationByEmail(
                 eventId, normalizeEmail(email), RegistrationStatus.ACTIVE)) {
             throw new ApiException(ErrorCode.GUEST_ALREADY_REGISTERED);
         }
