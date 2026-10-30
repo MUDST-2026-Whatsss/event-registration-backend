@@ -22,6 +22,7 @@ Base path: `/api/v1`
 | GET | `/api/v1/event-categories` | Public | Active |
 | GET | `/api/v1/events` | Public | Active; all published events, soonest first, with seat availability (clients split upcoming/past by date) |
 | GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
+| WS | `/api/v1/ws/seats` | Public, allowed CORS origins only | Active; live remaining seats for one published event (see below) |
 | POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events and classroom paid simulation, capacity enforced under a row lock |
 | POST | `/api/v1/registrations/{registrationId}/mock-payment/confirm` | Registration owner | Active only when mock payments are enabled; no real payment |
 | POST | `/api/v1/events/{eventId}/guest-registrations` | Public | Active; free events only, one active seat per guest email |
@@ -196,6 +197,28 @@ GET /api/v1/admin/events/{eventId}/analytics
   minutes). A `NO_SHOW` can still be checked in, for late arrivals and offline check-ins synced later.
 
 An administrator not assigned to the event gets `EVENT_NOT_FOUND` (404).
+
+## Live remaining seats
+
+Event pages open a WebSocket to `/api/v1/ws/seats` and send which event they show:
+
+```json
+{ "subscribe": "<eventId>" }
+```
+
+The server answers at once and again whenever the count changes, never with an unchanged count:
+
+```json
+{ "eventId": "<eventId>", "remainingSeats": 7, "full": false }
+```
+
+- `remainingSeats` is left out when the event hides its seat count; `full` is always sent.
+- An unknown, unpublished or malformed subscription closes the socket with code 1008.
+- Each API instance re-reads the counts of the events its own sockets watch every
+  `SEAT_POLL_INTERVAL` (default 2 seconds), so updates reach every page with several replicas and
+  no message broker.
+- Only origins in `CORS_ALLOWED_ORIGINS` may open the socket. Proxies must pass the `Upgrade` header
+  and allow long idle reads (the frontend nginx and the k8s ingress are configured for this).
 
 ## Event image storage
 
