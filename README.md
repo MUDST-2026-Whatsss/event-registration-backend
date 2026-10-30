@@ -85,6 +85,7 @@ Copy `.env.example` to the ignored `.env` and replace every placeholder secret. 
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Direct/managed PostgreSQL connection |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Local Compose PostgreSQL |
 | `DB_SCHEMA` | Application schema; normally `public` |
+| `DB_POOL_*` | Optional connection pool overrides, for example for Neon; see `.env.example` |
 | `JWT_SECRET` | HS256 signing secret, at least 32 decoded bytes |
 | `CORS_ALLOWED_ORIGINS` | Exact credentialed browser origins |
 | `COOKIE_SECURE`, `COOKIE_SAME_SITE`, `COOKIE_DOMAIN` | Authentication cookie policy |
