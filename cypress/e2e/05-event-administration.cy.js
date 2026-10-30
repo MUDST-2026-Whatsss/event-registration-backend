@@ -1,9 +1,10 @@
+import { scenario } from '../support/scenarios.js'
 import { createDraftEvent, eventRequest, publishEvent, submitForReview } from '../support/events.js'
 
 describe('Event Administration Lifecycle', () => {
   const timestamp = Date.now()
 
-  it('admin edits a draft, submits it, withdraws it, and deletes it', () => {
+  scenario('event_lifecycle', function event_lifecycle() {
     createDraftEvent(`Cypress draft ${timestamp}`, 5).then((draft) => {
       // 1. Edit the draft title
       cy.request('/api/v1/event-categories').then((categories) => {
@@ -32,7 +33,7 @@ describe('Event Administration Lifecycle', () => {
     })
   })
 
-  it('super admin rejects a submitted event with a comment', () => {
+  scenario('event_reject', function event_reject() {
     createDraftEvent(`Cypress rejected ${timestamp}`, 5)
       .then((event) => submitForReview(event))
       .then((review) => {
@@ -47,7 +48,7 @@ describe('Event Administration Lifecycle', () => {
       })
   })
 
-  it('publishes an approved event to the public catalogue and applies an approved change request', () => {
+  scenario('event_publish_change', function event_publish_change() {
     publishEvent(`Cypress published ${timestamp}`, 5).then((event) => {
       // 1. The event is public by ID in the catalogue and by slug in the detail endpoint
       cy.request('/api/v1/events').then((res) => {
@@ -80,7 +81,7 @@ describe('Event Administration Lifecycle', () => {
     })
   })
 
-  it('rejects event creation with an invalid schedule', () => {
+  scenario('event_invalid_schedule', function event_invalid_schedule() {
     cy.loginAs('admin')
     cy.request('/api/v1/event-categories').then((categories) => {
       const request = eventRequest(`Cypress invalid ${timestamp}`, categories.body[0].eventCategoryId, 5)

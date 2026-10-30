@@ -65,8 +65,7 @@ const E2E_USERS = {
 // Registration only grants USER, so administrator roles are inserted directly into the Compose
 // PostgreSQL container. Running the same insert twice does nothing.
 Cypress.Commands.add('grantRole', (email, roleCode) => {
-  const sql = `insert into auth_user_roles (user_id, role_id) select u.user_id, r.role_id from auth_users u, auth_roles r where u.email = '${email}' and r.role_code = '${roleCode}' on conflict do nothing`
-  return cy.exec(`echo "${sql}" | docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`)
+  return cy.task('grantRole', { email, roleCode }, { log: false })
 })
 
 // Logs in as one of the E2E_USERS. The session is cached across specs to stay under the login rate limit.

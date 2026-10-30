@@ -1,5 +1,6 @@
+import { scenario } from '../support/scenarios.js'
 describe('Event Categories', () => {
-  it('returns a list of active event categories', () => {
+  scenario('events_categories', function events_categories() {
     cy.request({
       method: 'GET',
       url: '/api/v1/event-categories',
