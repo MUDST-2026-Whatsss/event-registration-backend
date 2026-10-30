@@ -43,6 +43,7 @@ Base path: `/api/v1`
 | DELETE | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED; published events are cancelled instead |
 | GET | `/api/v1/admin/events/{eventId}/registrations` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; paginated participant list, `query` searches name/email/number |
 | POST | `/api/v1/admin/events/{eventId}/check-in` | `REGISTRATION_CHECK_IN`, assigned scope, or SUPER_ADMIN | Active; checks in a confirmed registration by its registration number |
+| GET | `/api/v1/admin/events/{eventId}/analytics` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; signups, drop-offs and show rate for one event |
 | GET | `/api/v1/admin/events/{eventId}/change-requests` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events/{eventId}/change-requests?version=` | `EVENT_UPDATE`, published event | Active |
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
@@ -163,7 +164,33 @@ row. A checked-in registration still counts toward capacity.
 | `INVALID_EVENT_STATE` | 409 | Event is not published |
 | `REGISTRATION_NOT_FOUND` | 404 | Unknown number or a number from another event |
 | `ALREADY_CHECKED_IN` | 409 | The registration was already checked in |
-| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` (pending payment or cancelled) |
+| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` or `NO_SHOW` (pending payment or cancelled) |
+
+### Event analytics
+
+```json
+GET /api/v1/admin/events/{eventId}/analytics
+{
+  "signups": 120, "memberSignups": 95, "guestSignups": 25,
+  "dropOffs": 14, "dropOffRate": 0.117, "cancelledByAdmin": 2,
+  "confirmed": 0, "checkedIn": 80, "noShows": 24, "showRate": 0.769,
+  "eventEnded": true,
+  "dailySignups": [{ "date": "2026-10-20", "count": 12 }]
+}
+```
+
+- `signups` counts every registration ever made for the event, members and guests.
+- `dropOffs` = `CANCELLED_BY_USER` + `PAYMENT_EXPIRED`. Administrator cancellations are
+  `cancelledByAdmin`; registrations cancelled with the event are in neither.
+- `showRate` = `checkedIn` / (`checkedIn` + `noShows`), and is `null` until `endAt` has passed.
+  Once the event has ended, `noShows` also counts registrations still `CONFIRMED`; `confirmed` is the
+  raw status count. Rates are `null` when there is nothing to divide by.
+- `dailySignups` groups by the registration day in the event's own timezone, oldest first.
+- A scheduled job marks registrations still `CONFIRMED` as `NO_SHOW` once `NO_SHOW_GRACE_PERIOD`
+  (default 6 hours) has passed since `endAt`, checking every `NO_SHOW_SWEEP_INTERVAL` (default 5
+  minutes). A `NO_SHOW` can still be checked in, for late arrivals and offline check-ins synced later.
+
+An administrator not assigned to the event gets `EVENT_NOT_FOUND` (404).
 
 ## Event image storage
 

@@ -6,9 +6,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -94,6 +96,50 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
             """)
     Page<Registration> findRecentForAssignedEvents(
             @Param("userId") UUID userId, Pageable pageable);
+
+    /** Rows of {@code [status, registered_as_guest, count]} for one event. */
+    @Query(value = """
+            select status, registered_as_guest, count(*) from registrations
+            where event_id = :eventId
+            group by status, registered_as_guest
+            """, nativeQuery = true)
+    List<Object[]> countByStatusAndGuest(@Param("eventId") UUID eventId);
+
+    /** Rows of {@code [ISO day, count]}, oldest first; days are counted in {@code timezone}. */
+    @Query(value = """
+            select to_char(registered_at at time zone :timezone, 'YYYY-MM-DD') as day, count(*) from registrations
+            where event_id = :eventId
+            group by day
+            order by day
+            """, nativeQuery = true)
+    List<Object[]> countDailySignups(@Param("eventId") UUID eventId, @Param("timezone") String timezone);
+
+    /**
+     * Marks confirmed registrations of events that ended before {@code endedBefore} as
+     * {@code NO_SHOW} and records the transition. The status filter makes a second, concurrent run
+     * skip rows the first one took.
+     *
+     * @return the number of registrations marked
+     */
+    // Bypasses loaded entities, so flush pending changes first and drop the stale copies after.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            with marked as (
+                update registrations r
+                -- clock_timestamp(), not now(): updated_at must not precede created_at, which the
+                -- application set from its own clock.
+                set status = 'NO_SHOW', updated_at = greatest(clock_timestamp(), r.created_at),
+                    version = r.version + 1
+                from events e
+                where e.event_id = r.event_id
+                  and r.status = 'CONFIRMED'
+                  and e.end_at < :endedBefore
+                returning r.registration_id
+            )
+            insert into registration_status_history (registration_id, from_status, to_status, reason)
+            select registration_id, 'CONFIRMED', 'NO_SHOW', 'Event ended without a check-in' from marked
+            """, nativeQuery = true)
+    int markNoShowsForEndedEvents(@Param("endedBefore") Instant endedBefore);
 
     boolean existsByRegistrationNumber(String registrationNumber);
 }
