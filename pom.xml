@@ -49,6 +49,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- Pushes live remaining-seat counts to open event pages. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
 		<!-- Serves /actuator/health, which the compose healthcheck and README both use. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
