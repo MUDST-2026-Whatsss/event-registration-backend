@@ -80,8 +80,9 @@ npm run test:e2e
 
 Registration only grants the USER role, so `cy.loginAs` creates fixed `e2e_*@example.com`
 accounts and inserts the ADMIN or SUPER_ADMIN role through `docker compose exec postgres psql`.
-Run it only against a disposable local database, never a shared or production one. Set
-`COMPOSE_PROJECT_NAME` when the stack was started under a different Compose project name. Login
+Run it only against a disposable local database, never a shared or production one. Explicitly set
+`COMPOSE_PROJECT_NAME` to that test project before starting the stack and running Cypress. See
+[the named E2E commands and setup](e2e.md), including `COMPOSE_ENV_FILES` for a separate env file. Login
 sessions are cached across specs to stay under the login rate limit.
 
 ## Coding checklist

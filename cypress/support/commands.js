@@ -105,3 +105,19 @@ Cypress.Commands.add('loginAs', (key) => {
     },
   })
 })
+
+// Read and write through the real HTTP API. Expected negative responses are asserted by each case.
+Cypress.Commands.add('apiRequest', (method, path, body) => {
+  const send = token => cy.request({ method, url: `/api/v1${path}`, body,
+    headers: token ? { 'X-XSRF-TOKEN': token } : {}, failOnStatusCode: false })
+  return method === 'GET' ? send() : cy.getCsrfToken().then(send)
+})
+
+Cypress.Commands.add('createAccount', (values = {}) => {
+  const account = { email: `e2e_${Date.now()}_${Cypress._.random(1000000000)}@example.test`,
+    password: 'Password123!', firstName: 'E2E', lastName: 'Student', phoneNumber: '0812345678', ...values }
+  return cy.apiRequest('POST', '/auth/register', account).then(response => {
+    expect(response.status, 'independent test account created').to.eq(201)
+    return account
+  })
+})

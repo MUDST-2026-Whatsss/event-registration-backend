@@ -13,7 +13,11 @@ describe('Authentication and User Lifecycle', () => {
     // 1. Register new user
     cy.apiRegister(testUser).then((res) => {
       expect([200, 201]).to.include(res.status)
+      expect(res.body).to.include({ phoneNumber: '0812345678' })
+      expect(res.body.roles).to.deep.eq(['USER'])
+      expect(res.body).not.to.have.property('password')
     })
+    cy.request({ url: '/api/v1/auth/me', failOnStatusCode: false }).its('status').should('eq', 401)
 
     // 2. Login with registered user credentials
     cy.apiLogin(testUser.email, testUser.password).then((res) => {
@@ -53,9 +57,14 @@ describe('Authentication and User Lifecycle', () => {
     }).then((res) => {
       expect(res.status).to.eq(401)
     })
+    cy.apiRequest('POST', '/auth/refresh').its('status').should('eq', 401)
+    cy.getCookie('EVENT_ACCESS_TOKEN').should('be.null')
+    cy.getCookie('EVENT_REFRESH_TOKEN').should('be.null')
   })
 
   scenario('login_failed', function login_failed() {
+    const account = { ...testUser, email: `e2e_wrong_${Date.now()}@example.test` }
+    cy.apiRegister(account)
     cy.getCsrfToken().then((csrfToken) => {
       cy.request({
         method: 'POST',
@@ -64,7 +73,7 @@ describe('Authentication and User Lifecycle', () => {
           'X-XSRF-TOKEN': csrfToken,
         },
         body: {
-          email: testUser.email,
+          email: account.email,
           password: 'WrongPassword999!',
         },
         failOnStatusCode: false,

@@ -7,6 +7,9 @@ describe('Role-based Access Control', () => {
     cy.request({ url: '/api/v1/admin/events', failOnStatusCode: false }).its('status').should('eq', 403)
     cy.request({ url: '/api/v1/admin/users', failOnStatusCode: false }).its('status').should('eq', 403)
     cy.request({ url: '/api/v1/admin/audit-logs', failOnStatusCode: false }).its('status').should('eq', 403)
+    for (const path of ['/admin/roles', '/admin/permissions', '/admin/events/stats', '/admin/registrations/recent']) {
+      cy.request({ url: `/api/v1${path}`, failOnStatusCode: false }).its('status').should('eq', 403)
+    }
   })
 
   scenario('access_super_admin_denied', function access_super_admin_denied() {

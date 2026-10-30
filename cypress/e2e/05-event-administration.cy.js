@@ -55,6 +55,9 @@ describe('Event Administration Lifecycle', () => {
         const summary = res.body.find((item) => item.eventId === event.eventId)
         expect(summary, 'catalogue entry').to.exist
         expect(summary).to.have.property('remainingSeats', 5)
+        expect(summary).to.have.property('slug').that.is.a('string')
+        expect(summary).to.have.property('eventId').that.is.a('string')
+        expect(summary).not.to.have.property('createdBy')
       })
       cy.request(`/api/v1/events/${event.slug}`).its('body.title').should('eq', `Cypress published ${timestamp}`)
 

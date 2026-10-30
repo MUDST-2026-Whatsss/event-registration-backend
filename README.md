@@ -25,6 +25,9 @@ provider is required. Registration and cancellation still persist in PostgreSQL.
 
 ## Requirements
 
+Named Cypress commands and the deduplicated case inventory are documented in
+[the E2E guide](docs/e2e.md), including disposable database setup for Windows and CI.
+
 - To run the delivered system: Docker Desktop with Docker Compose v2 and an internet connection.
 - To change source code: Git and both repositories. Docker builds include Java/Node build tools.
 - To run backend tests outside Docker: Java 17. The included Maven wrapper downloads Maven;
