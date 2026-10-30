@@ -125,12 +125,17 @@ POST /api/v1/guest-registrations/lookup
 | Error code | HTTP | When |
 | --- | --- | --- |
 | `GUEST_PAID_REGISTRATION_UNAVAILABLE` | 409 | The event is paid; paying needs a signed-in owner |
-| `GUEST_ALREADY_REGISTERED` | 409 | This email (case-insensitive) already holds an active guest seat for the event |
+| `GUEST_ALREADY_REGISTERED` | 409 | This email already holds an active seat for the event, as a guest or member (case-insensitive, surrounding whitespace ignored) |
 | `REGISTRATION_NOT_FOUND` | 404 | Lookup number and email do not match the same guest registration |
 
 The guest row is stored with `registered_as_guest = true` and no participant or submitting account.
 Capacity, registration windows and check-in work the same as for members. Guests cannot cancel
 online. Responses include `registeredAsGuest`, also shown on the admin participant list.
+
+Both member and guest registration check the attendee email against all active registrations for
+that event under the event-row lock. Members receive `ALREADY_REGISTERED` on an email conflict.
+The same email may register for other events or after cancellation; phone numbers are not unique.
+Member paid-payment retries still resume their existing registration without creating another seat.
 
 When an account with a **verified** email signs up or signs in, every unlinked guest registration
 with that email is linked to its participant (`guest_linked_at` is set) and appears in
