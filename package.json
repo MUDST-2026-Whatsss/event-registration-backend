@@ -73,7 +73,13 @@
     "session_refresh": "node scripts/cypress-runner.js session_refresh",
     "session_refresh_missing": "node scripts/cypress-runner.js session_refresh_missing",
     "session_role_denied": "node scripts/cypress-runner.js session_role_denied",
-    "session_select_role": "node scripts/cypress-runner.js session_select_role"
+    "session_select_role": "node scripts/cypress-runner.js session_select_role",
+    "analytics": "node scripts/cypress-runner.js analytics",
+    "analytics_access": "node scripts/cypress-runner.js analytics_access",
+    "live_seats": "node scripts/cypress-runner.js live_seats",
+    "live_seats_unpublished": "node scripts/cypress-runner.js live_seats_unpublished",
+    "offline_check_in": "node scripts/cypress-runner.js offline_check_in",
+    "offline_check_in_invalid_time": "node scripts/cypress-runner.js offline_check_in_invalid_time"
   },
   "devDependencies": {
     "cypress": "^14.0.0"

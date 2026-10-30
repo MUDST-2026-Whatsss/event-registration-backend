@@ -60,12 +60,15 @@ API Cypress นี้ไม่ยืนยันการส่งอีเม�
 | `05-event-administration.cy.js` | `event_lifecycle`, `event_reject`, `event_publish_change`, `event_invalid_schedule` |
 | `06-registration-and-check-in.cy.js` | `registration_check_in`, `registration_event_cancel`, `registration_login_required`, `guest_registration_link` |
 | `07-access-control.cy.js` | `access_admin_denied`, `access_super_admin_denied`, `super_admin_access`, `role_create_delete` |
+| `analytics.cy.js` | `analytics`, `analytics_access` |
 | `change_password.cy.js` | `change_password`, `change_password_failed`, `change_password_weak` |
 | `events.cy.js` | `events_not_found` |
 | `forgot_password.cy.js` | `forgot_password`, `forgot_password_invalid_email` |
 | `health.cy.js` | `health_wrong_method` |
+| `live_seats.cy.js` | `live_seats`, `live_seats_unpublished` |
 | `login.cy.js` | `login_unknown_account`, `login_normalized_email`, `login_empty`, `login_locked` |
 | `logout.cy.js` | `logout_without_session` |
+| `offline_check_in.cy.js` | `offline_check_in`, `offline_check_in_invalid_time` |
 | `profile.cy.js` | `profile_update`, `profile_partial_update`, `profile_invalid_phone`, `profile_name_too_long` |
 | `register.cy.js` | `register_duplicate`, `register_invalid_email`, `register_invalid_phone`, `register_weak_password`, `register_empty_name`, `register_name_too_long` |
 | `registration.cy.js` | `registration_empty_list`, `registration_not_found`, `registration_missing_event`, `registration_consent_required`, `registration_cancel_missing` |
