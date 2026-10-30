@@ -33,7 +33,8 @@ final class RegistrationFixtures {
     AuthenticatedUser admin() {
         UUID id = insertUser("admin");
         return new AuthenticatedUser(id, "admin-" + id + "@example.test", "ADMIN", List.of("ADMIN"),
-                List.of("EVENT_CREATE", "EVENT_UPDATE", "EVENT_CANCEL", "REGISTRATION_VIEW_ALL"));
+                List.of("EVENT_CREATE", "EVENT_UPDATE", "EVENT_CANCEL", "REGISTRATION_VIEW_ALL",
+                        "REGISTRATION_CHECK_IN"));
     }
 
     AuthenticatedUser participant(String label, String firstName, String lastName) {

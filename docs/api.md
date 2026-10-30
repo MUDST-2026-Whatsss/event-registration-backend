@@ -40,6 +40,7 @@ Base path: `/api/v1`
 | POST | `/api/v1/admin/events/{eventId}/cancel` | `EVENT_CANCEL`, assigned scope | Active; also cancels every active registration |
 | DELETE | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED; published events are cancelled instead |
 | GET | `/api/v1/admin/events/{eventId}/registrations` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; paginated participant list, `query` searches name/email/number |
+| POST | `/api/v1/admin/events/{eventId}/check-in` | `REGISTRATION_CHECK_IN`, assigned scope, or SUPER_ADMIN | Active; checks in a confirmed registration by its registration number |
 | GET | `/api/v1/admin/events/{eventId}/change-requests` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events/{eventId}/change-requests?version=` | `EVENT_UPDATE`, published event | Active |
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
@@ -105,6 +106,28 @@ Paid registration is a classroom simulation. With `MOCK_PAYMENTS_ENABLED=true`, 
 `PENDING_PAYMENT` record. The owner calls the mock confirmation endpoint to persist `CONFIRMED`;
 repeated confirmation returns the same registration. No bank transaction or provider webhook is used.
 
+### Check-in
+
+The participant's QR code carries their registration number. Staff send that number, read from the
+QR code or typed in by hand, to the check-in endpoint. Case and surrounding spaces are ignored.
+
+```json
+POST /api/v1/admin/events/{eventId}/check-in
+{ "registrationNumber": "REG-7KQ2M9XA4P" }
+```
+
+A successful check-in returns the participant list row with `status` `CHECKED_IN` and
+`checkedInAt` set, records the staff member in `checked_in_by_user_id`, and appends a status history
+row. A checked-in registration still counts toward capacity.
+
+| Error code | HTTP | When |
+| --- | --- | --- |
+| `EVENT_NOT_FOUND` | 404 | Event is missing or the caller is not assigned to it |
+| `INVALID_EVENT_STATE` | 409 | Event is not published |
+| `REGISTRATION_NOT_FOUND` | 404 | Unknown number or a number from another event |
+| `ALREADY_CHECKED_IN` | 409 | The registration was already checked in |
+| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` (pending payment or cancelled) |
+
 ## Event image storage
 
 Upload a cover as `multipart/form-data` using the `file` field. Accepted formats are JPEG, PNG, and
@@ -168,11 +191,11 @@ Do not branch frontend logic on human-readable messages.
 ## Classroom scope and optional work
 
 Implemented: public events, partial drafts, event invitations, registration/cancellation, participant
-lists, dashboards, event governance, users/roles/permissions, password recovery, and audit activity.
+lists, check-in, dashboards, event governance, users/roles/permissions, password recovery, and audit activity.
 The audit controller also provides `/admin/audit-logs/export`, `/sign-ins`, `/sign-ins/export`,
 `/sessions`, and `/sessions/export` beneath `/api/v1`. Exports are Excel workbooks.
 
-Optional future work includes server-stored profile avatars, signed attendance tickets, check-in,
+Optional future work includes server-stored profile avatars, signed attendance tickets,
 individual admin registration cancellation, participant export, and email verification outside the
 local profile. Real payments are not required for this university project.
 

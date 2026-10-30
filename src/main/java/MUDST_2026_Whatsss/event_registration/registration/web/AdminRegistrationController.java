@@ -4,6 +4,8 @@ import MUDST_2026_Whatsss.event_registration.auth.security.AuthenticatedUser;
 import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -12,13 +14,15 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Participant list for an event, scoped to the event's assigned administrators. */
+/** Participant list and check-in for an event, scoped to the event's assigned administrators. */
 @RestController
 @RequestMapping("/api/v1/admin")
 @PreAuthorize("hasAuthority('REGISTRATION_VIEW_ALL') or hasRole('SUPER_ADMIN')")
@@ -38,6 +42,15 @@ public class AdminRegistrationController {
             Pageable pageable,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.listForEvent(eventId, query, pageable, user);
+    }
+
+    @PostMapping("/events/{eventId}/check-in")
+    @PreAuthorize("hasAuthority('REGISTRATION_CHECK_IN') or hasRole('SUPER_ADMIN')")
+    public AdminRegistrationResponse checkIn(
+            @PathVariable UUID eventId,
+            @Valid @RequestBody CheckInRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.checkIn(eventId, request, user);
     }
 
     @GetMapping("/registrations/recent")
