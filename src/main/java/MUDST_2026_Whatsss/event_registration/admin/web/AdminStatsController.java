@@ -4,12 +4,15 @@ import MUDST_2026_Whatsss.event_registration.auth.repository.AuthUserRepository;
 import MUDST_2026_Whatsss.event_registration.event.domain.EventStatus;
 import MUDST_2026_Whatsss.event_registration.event.repository.EventRepository;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Platform-wide event and user totals, so only super administrators may read them. */
 @RestController
 @RequestMapping("/api/v1/admin/stats")
+@PreAuthorize("hasRole('SUPER_ADMIN')")
 public class AdminStatsController {
 
     public record AdminStatsResponse(
