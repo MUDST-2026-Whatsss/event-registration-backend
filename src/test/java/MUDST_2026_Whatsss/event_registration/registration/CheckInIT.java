@@ -23,6 +23,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,6 +150,33 @@ class CheckInIT extends PostgresIntegrationTest {
     private static UsernamePasswordAuthenticationToken authenticated(AuthenticatedUser user) {
         return UsernamePasswordAuthenticationToken.authenticated(user, null,
                 user.permissions().stream().map(SimpleGrantedAuthority::new).toList());
+    }
+
+    @Test
+    void syncedOfflineCheckInKeepsTheTimeItWasScanned() {
+        UUID eventId = fixtures.publishedEvent(admin, "Offline check-in time", 5);
+        var registration = service.register(eventId, consent(), fixtures.participant("offline", "Offline", null));
+        // Scanned offline right after registering, synced a moment later.
+        Instant scannedAt = registration.registeredAt();
+
+        var checkedIn = service.checkIn(eventId, new CheckInRequest(registration.registrationNumber(), scannedAt), admin);
+
+        assertThat(checkedIn.checkedInAt()).isEqualTo(scannedAt);
+    }
+
+    @Test
+    void checkInTimeInTheFutureOrBeforeRegistrationIsRejected() {
+        UUID eventId = fixtures.publishedEvent(admin, "Offline check-in bad time", 5);
+        var registration = service.register(eventId, consent(), fixtures.participant("clock", "Clock", null));
+        String number = registration.registrationNumber();
+
+        assertError(() -> service.checkIn(eventId,
+                new CheckInRequest(number, Instant.now().plusSeconds(3600)), admin), ErrorCode.INVALID_CHECK_IN_TIME);
+        assertError(() -> service.checkIn(eventId,
+                new CheckInRequest(number, registration.registeredAt().minusSeconds(60)), admin), ErrorCode.INVALID_CHECK_IN_TIME);
+        // A device clock a minute ahead is tolerated and capped at the server time.
+        var checkedIn = service.checkIn(eventId, new CheckInRequest(number, Instant.now().plusSeconds(60)), admin);
+        assertThat(checkedIn.checkedInAt()).isBeforeOrEqualTo(Instant.now());
     }
 
     private static CreateRegistrationRequest consent() {
