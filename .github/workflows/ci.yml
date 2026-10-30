@@ -15,6 +15,8 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: event-registration-ci
     outputs:
       frontend-sha: ${{ steps.frontend-revision.outputs.sha }}
 
@@ -59,6 +61,8 @@ jobs:
           sed -i 's/replace-with-openssl-rand-base64-48/dGhpcy1pcy1hLXJhbmRvbS1qd3Qtc2VjcmV0LWZvci1jaS10ZXN0aW5nLTIwMjY=/' .env
           sed -i 's/replace-with-minio-access-key/event_minio_admin/' .env
           sed -i 's/replace-with-a-long-random-minio-secret/event_minio_ci_secret_12345/' .env
+          # Functional E2E creates independent accounts; account lockout remains enabled.
+          sed -i 's/RATE_LIMIT_ENABLED=true/RATE_LIMIT_ENABLED=false/' .env
 
       - name: Start services with Docker Compose
         run: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio api

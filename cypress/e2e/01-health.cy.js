@@ -1,5 +1,6 @@
+import { scenario } from '../support/scenarios.js'
 describe('Health Probes', () => {
-  it('returns 200 OK from the legacy /api/health endpoint', () => {
+  scenario('health', function health() {
     cy.request({
       method: 'GET',
       url: '/api/health',
@@ -9,7 +10,7 @@ describe('Health Probes', () => {
     })
   })
 
-  it('returns 200 UP from the /actuator/health endpoint', () => {
+  scenario('health_actuator', function health_actuator() {
     cy.request({
       method: 'GET',
       url: '/actuator/health',

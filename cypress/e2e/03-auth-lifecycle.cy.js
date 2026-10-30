@@ -1,3 +1,4 @@
+import { scenario } from '../support/scenarios.js'
 describe('Authentication and User Lifecycle', () => {
   const timestamp = Date.now()
   const testUser = {
@@ -8,7 +9,7 @@ describe('Authentication and User Lifecycle', () => {
     phoneNumber: '081-234-5678',
   }
 
-  it('registers a new user and allows login, profile inspection, and logout', () => {
+  scenario('login', function login() {
     // 1. Register new user
     cy.apiRegister(testUser).then((res) => {
       expect([200, 201]).to.include(res.status)
@@ -54,7 +55,7 @@ describe('Authentication and User Lifecycle', () => {
     })
   })
 
-  it('rejects login with invalid password', () => {
+  scenario('login_failed', function login_failed() {
     cy.getCsrfToken().then((csrfToken) => {
       cy.request({
         method: 'POST',
