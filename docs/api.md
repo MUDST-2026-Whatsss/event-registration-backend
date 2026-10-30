@@ -24,6 +24,8 @@ Base path: `/api/v1`
 | GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
 | POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events and classroom paid simulation, capacity enforced under a row lock |
 | POST | `/api/v1/registrations/{registrationId}/mock-payment/confirm` | Registration owner | Active only when mock payments are enabled; no real payment |
+| POST | `/api/v1/events/{eventId}/guest-registrations` | Public | Active; free events only, one active seat per guest email |
+| POST | `/api/v1/guest-registrations/lookup` | Public | Active; guest ticket by registration number and email |
 | GET | `/api/v1/invitations` | Authenticated | Active; caller's published event invitations |
 | GET | `/api/v1/registrations` | `REGISTRATION_READ_SELF` | Active; caller's registrations, newest first |
 | GET | `/api/v1/registrations/{registrationId}` | `REGISTRATION_READ_SELF` | Active; caller's own registration only |
@@ -79,9 +81,9 @@ The legacy `/api/events` controller has been removed.
 
 ## Registrations
 
-Registration requires a signed-in account holding `REGISTRATION_CREATE_SELF` (the USER role);
-guests receive HTTP 401. Only the consent flag is required; blank attendee fields fall back to the
-caller's profile and account email.
+This endpoint requires a signed-in account holding `REGISTRATION_CREATE_SELF` (the USER role);
+guests receive HTTP 401 here and use the guest endpoint below instead. Only the consent flag is
+required; blank attendee fields fall back to the caller's profile and account email.
 
 ```json
 POST /api/v1/events/{eventId}/registrations
@@ -106,6 +108,35 @@ status change is appended to `registration_status_history`.
 Paid registration is a classroom simulation. With `MOCK_PAYMENTS_ENABLED=true`, it creates a
 `PENDING_PAYMENT` record. The owner calls the mock confirmation endpoint to persist `CONFIRMED`;
 repeated confirmation returns the same registration. No bank transaction or provider webhook is used.
+
+### Guest registration
+
+Visitors may register for free events without an account. Both endpoints are public but still need
+the CSRF header.
+
+```json
+POST /api/v1/events/{eventId}/guest-registrations
+{ "attendeeName": "Required", "attendeeEmail": "required@example.com", "attendeePhone": "Optional", "consentAccepted": true }
+
+POST /api/v1/guest-registrations/lookup
+{ "registrationNumber": "REG-XXXXXXXXXX", "email": "required@example.com" }
+```
+
+| Error code | HTTP | When |
+| --- | --- | --- |
+| `GUEST_PAID_REGISTRATION_UNAVAILABLE` | 409 | The event is paid; paying needs a signed-in owner |
+| `GUEST_ALREADY_REGISTERED` | 409 | This email (case-insensitive) already holds an active guest seat for the event |
+| `REGISTRATION_NOT_FOUND` | 404 | Lookup number and email do not match the same guest registration |
+
+The guest row is stored with `registered_as_guest = true` and no participant or submitting account.
+Capacity, registration windows and check-in work the same as for members. Guests cannot cancel
+online. Responses include `registeredAsGuest`, also shown on the admin participant list.
+
+When an account with a **verified** email signs up or signs in, every unlinked guest registration
+with that email is linked to its participant (`guest_linked_at` is set) and appears in
+`GET /registrations`, where the owner can cancel it as usual. Unverified accounts receive nothing,
+so signing up with someone else's address does not reveal their ticket. If the account already
+holds a registration for the same event, the guest row stays unlinked.
 
 ### Check-in
 

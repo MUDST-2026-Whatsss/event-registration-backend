@@ -18,6 +18,7 @@ import MUDST_2026_Whatsss.event_registration.auth.web.dto.UpdateProfileRequest;
 import MUDST_2026_Whatsss.event_registration.auth.web.dto.UserResponse;
 import MUDST_2026_Whatsss.event_registration.common.error.ApiException;
 import MUDST_2026_Whatsss.event_registration.common.error.ErrorCode;
+import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -67,6 +68,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties properties;
     private final SecurityAuditService securityAuditService;
+    private final RegistrationService registrationService;
 
     public AuthService(AuthUserRepository userRepository,
                        ParticipantRepository participantRepository,
@@ -77,7 +79,8 @@ public class AuthService {
                        RateLimiterService rateLimiter,
                        PasswordEncoder passwordEncoder,
                        AuthProperties properties,
-                       SecurityAuditService securityAuditService) {
+                       SecurityAuditService securityAuditService,
+                       RegistrationService registrationService) {
         this.userRepository = userRepository;
         this.participantRepository = participantRepository;
         this.roleRepository = roleRepository;
@@ -88,6 +91,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.securityAuditService = securityAuditService;
+        this.registrationService = registrationService;
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
@@ -138,6 +142,7 @@ public class AuthService {
                 .build());
 
         securityAuditService.record(user, "ACCOUNT_REGISTERED", user, Map.of());
+        linkGuestRegistrations(user, normalizedEmail);
         log.info("Registered account {}", user.getUserId());
         return UserResponse.from(user, participant);
     }
@@ -204,6 +209,8 @@ public class AuthService {
         userRepository.save(user);
 
         loginAuditService.recordSuccess(user.getUserId(), normalizedEmail, context);
+        // Picks up guest registrations made since sign-up, or before the email was verified.
+        linkGuestRegistrations(user, normalizedEmail);
 
         if (existingRefreshToken != null && !existingRefreshToken.isBlank()) {
             sessionService.revokeByRawToken(
@@ -352,6 +359,21 @@ public class AuthService {
     }
 
     /** Mirrors the {@code email_normalized} generated column: trimmed and lowercased. */
+    /**
+     * Moves guest registrations made with this email into the account's history. Only a verified
+     * address may claim them; otherwise signing up with someone else's email would reveal their
+     * ticket.
+     */
+    private void linkGuestRegistrations(AuthUser user, String normalizedEmail) {
+        if (user.getEmailVerifiedAt() == null) {
+            return;
+        }
+        int linked = registrationService.linkGuestRegistrations(user.getUserId(), normalizedEmail);
+        if (linked > 0) {
+            log.info("Linked {} guest registration(s) to account {}", linked, user.getUserId());
+        }
+    }
+
     private static String normalizeEmail(String email) {
         return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }

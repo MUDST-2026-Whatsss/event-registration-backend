@@ -26,7 +26,8 @@ import java.util.UUID;
  * One participant's seat at one event, in {@code registrations}.
  *
  * <p>{@code (event_id, participant_id)} is unique, so registering again after a cancellation
- * reactivates this row instead of inserting a new one.
+ * reactivates this row instead of inserting a new one. Guest registrations have no participant
+ * yet, so each guest attempt is its own row; only one active row per guest email is allowed.
  */
 @Entity
 @Table(name = "registrations")
@@ -49,11 +50,19 @@ public class Registration {
     @JoinColumn(name = "event_id", nullable = false, updatable = false)
     private Event event;
 
-    @Column(name = "participant_id", nullable = false, updatable = false)
+    /** Null for a guest registration until it is linked to the account that signs up with its email. */
+    @Column(name = "participant_id")
     private UUID participantId;
 
-    @Column(name = "registered_by_user_id", nullable = false)
+    /** Null when a guest submitted the registration without signing in. */
+    @Column(name = "registered_by_user_id")
     private UUID registeredByUserId;
+
+    @Column(name = "registered_as_guest", nullable = false, updatable = false)
+    private boolean registeredAsGuest;
+
+    @Column(name = "guest_linked_at")
+    private Instant guestLinkedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)

@@ -25,6 +25,8 @@ import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentReg
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestTicketLookupRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,8 +36,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -82,19 +87,14 @@ public class RegistrationService {
     @Transactional
     public RegistrationResponse register(
             UUID eventId, CreateRegistrationRequest request, AuthenticatedUser principal) {
-        Event event = eventRepository.findByIdForUpdate(eventId)
-                .filter(candidate -> candidate.getStatus() == EventStatus.PUBLISHED)
-                .orElseThrow(EventNotFoundException::new);
         Instant now = Instant.now();
-        if (now.isBefore(event.getRegistrationStartAt()) || !now.isBefore(event.getRegistrationEndAt())) {
-            throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
-        }
+        Event event = lockOpenEvent(eventId, now);
         boolean paid = event.getEventType() == EventType.PAID;
         if (paid && !mockPaymentsEnabled) {
             throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
         }
 
-        Participant participant = participantFor(principal);
+        Participant participant = participantFor(principal.userId());
         Registration registration = registrationRepository
                 .findByEvent_EventIdAndParticipantId(eventId, participant.getParticipantId())
                 .orElse(null);
@@ -106,9 +106,7 @@ public class RegistrationService {
             }
             throw new ApiException(ErrorCode.ALREADY_REGISTERED);
         }
-        if (eventRepository.countActiveRegistrations(eventId) >= event.getMaximumParticipants()) {
-            throw new ApiException(ErrorCode.EVENT_FULL);
-        }
+        requireSeat(event);
 
         RegistrationStatus previous = registration == null ? null : registration.getStatus();
         if (registration == null) {
@@ -135,6 +133,83 @@ public class RegistrationService {
 
         recordTransition(registration, previous, principal.userId(), null);
         return toResponse(registration, now);
+    }
+
+    /**
+     * A visitor registers without an account. Only free events are open to guests, because paying
+     * needs a signed-in owner. The email is how the guest finds the ticket again and how it is linked
+     * to an account later, so one email holds at most one active seat per event.
+     */
+    @Transactional
+    public RegistrationResponse registerGuest(UUID eventId, GuestRegistrationRequest request) {
+        Instant now = Instant.now();
+        Event event = lockOpenEvent(eventId, now);
+        if (event.getEventType() == EventType.PAID) {
+            throw new ApiException(ErrorCode.GUEST_PAID_REGISTRATION_UNAVAILABLE);
+        }
+        String email = request.attendeeEmail().trim();
+        if (registrationRepository.existsGuestRegistration(
+                eventId, normalizeEmail(email), RegistrationStatus.ACTIVE)) {
+            throw new ApiException(ErrorCode.GUEST_ALREADY_REGISTERED);
+        }
+        requireSeat(event);
+
+        Registration registration = registrationRepository.saveAndFlush(Registration.builder()
+                .registrationNumber(newRegistrationNumber())
+                .event(event)
+                .registeredAsGuest(true)
+                .status(RegistrationStatus.CONFIRMED)
+                .attendeeName(request.attendeeName().trim())
+                .attendeeEmail(email)
+                .attendeePhone(firstNonBlank(request.attendeePhone()))
+                .consentAcceptedAt(now)
+                .registeredAt(now)
+                .confirmedAt(now)
+                .build());
+        recordTransition(registration, null, null, null);
+        return toResponse(registration, now, false);
+    }
+
+    /** A guest's ticket, found by the registration number and email they registered with. */
+    @Transactional(readOnly = true)
+    public RegistrationResponse guestTicket(GuestTicketLookupRequest request) {
+        String registrationNumber = request.registrationNumber().trim().toUpperCase(Locale.ROOT);
+        // A wrong email is reported like an unknown number, so neither can be probed alone.
+        return registrationRepository.findGuestTicket(registrationNumber, normalizeEmail(request.email()))
+                .map(registration -> toResponse(registration, Instant.now(), false))
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+    }
+
+    /**
+     * Moves the guest registrations made with this email into the account's history.
+     *
+     * <p>Callers must only pass an address the account has verified; otherwise anyone could sign up
+     * with someone else's email and read their ticket. A guest row for an event the account already
+     * holds a registration for stays unlinked, because a participant has one row per event.
+     */
+    @Transactional
+    public int linkGuestRegistrations(UUID userId, String normalizedEmail) {
+        List<Registration> guestRegistrations =
+                registrationRepository.findUnlinkedGuestRegistrations(normalizedEmail);
+        if (guestRegistrations.isEmpty()) {
+            return 0;
+        }
+        UUID participantId = participantFor(userId).getParticipantId();
+        Set<UUID> heldEvents = new HashSet<>();
+        Instant now = Instant.now();
+        int linked = 0;
+        for (Registration registration : guestRegistrations) {
+            UUID eventId = registration.getEvent().getEventId();
+            if (!heldEvents.add(eventId)
+                    || registrationRepository.findByEvent_EventIdAndParticipantId(eventId, participantId).isPresent()) {
+                continue;
+            }
+            registration.setParticipantId(participantId);
+            registration.setGuestLinkedAt(now);
+            registrationRepository.saveAndFlush(registration);
+            linked++;
+        }
+        return linked;
     }
 
     /** Demo-only confirmation: never accepts a client-provided payment status or transaction ID. */
@@ -276,7 +351,7 @@ public class RegistrationService {
                 .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
         // Someone else's registration is reported as missing so IDs cannot be probed.
         return registrationRepository.findDetailById(registrationId)
-                .filter(registration -> registration.getParticipantId().equals(participantId))
+                .filter(registration -> participantId.equals(registration.getParticipantId()))
                 .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
     }
 
@@ -288,11 +363,28 @@ public class RegistrationService {
     }
 
     /** Accounts created before participant profiles existed get one on first registration. */
-    private Participant participantFor(AuthenticatedUser principal) {
-        return participantRepository.findByUserId(principal.userId())
+    private Participant participantFor(UUID userId) {
+        return participantRepository.findByUserId(userId)
                 .orElseGet(() -> participantRepository.save(Participant.builder()
-                        .userId(principal.userId())
+                        .userId(userId)
                         .build()));
+    }
+
+    /** Locks the event row so the seat count read by {@link #requireSeat} cannot change underneath. */
+    private Event lockOpenEvent(UUID eventId, Instant now) {
+        Event event = eventRepository.findByIdForUpdate(eventId)
+                .filter(candidate -> candidate.getStatus() == EventStatus.PUBLISHED)
+                .orElseThrow(EventNotFoundException::new);
+        if (now.isBefore(event.getRegistrationStartAt()) || !now.isBefore(event.getRegistrationEndAt())) {
+            throw new ApiException(ErrorCode.REGISTRATION_CLOSED);
+        }
+        return event;
+    }
+
+    private void requireSeat(Event event) {
+        if (eventRepository.countActiveRegistrations(event.getEventId()) >= event.getMaximumParticipants()) {
+            throw new ApiException(ErrorCode.EVENT_FULL);
+        }
     }
 
     private void requireEventScope(Event event, AuthenticatedUser principal) {
@@ -331,6 +423,11 @@ public class RegistrationService {
     }
 
     private RegistrationResponse toResponse(Registration registration, Instant now) {
+        return toResponse(registration, now, cancellable(registration, now));
+    }
+
+    /** Guests read their ticket without an owner, so they are never offered cancellation. */
+    private RegistrationResponse toResponse(Registration registration, Instant now, boolean cancellable) {
         Event event = registration.getEvent();
         return new RegistrationResponse(
                 registration.getRegistrationId(),
@@ -343,7 +440,8 @@ public class RegistrationService {
                 registration.getConfirmedAt(),
                 registration.getCancelledAt(),
                 registration.getCancellationReason(),
-                cancellable(registration, now),
+                cancellable,
+                registration.isRegisteredAsGuest(),
                 eventMapper.toSummaryResponse(
                         event, eventRepository.countActiveRegistrations(event.getEventId())));
     }
@@ -360,7 +458,8 @@ public class RegistrationService {
                 registration.getConfirmedAt(),
                 registration.getCancelledAt(),
                 registration.getCancellationReason(),
-                registration.getCheckedInAt());
+                registration.getCheckedInAt(),
+                registration.isRegisteredAsGuest());
     }
 
     private static AdminRecentRegistrationResponse toRecentResponse(Registration registration) {
@@ -400,6 +499,11 @@ public class RegistrationService {
         String phone = firstNonBlank(request.attendeePhone(), participant.getPhoneNumber());
         // The profile column allows 32 characters but the registration snapshot only 30.
         return phone == null || phone.length() > 30 ? null : phone;
+    }
+
+    /** Same rule as account emails, so a guest email matches the account that signs up with it. */
+    private static String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String firstNonBlank(String... values) {

@@ -103,10 +103,63 @@ describe('Registration, Cancellation and Check-in', () => {
     })
   })
 
-  it('guests cannot register or list registrations', () => {
+  it('member registration endpoints still require sign-in', () => {
     // Authentication is checked before the event is looked up, so any event ID works here.
     cy.apiSend('POST', '/api/v1/events/00000000-0000-0000-0000-000000000000/registrations', { consentAccepted: true },
       { failOnStatusCode: false }).its('status').should('eq', 401)
     cy.request({ url: '/api/v1/registrations', failOnStatusCode: false }).its('status').should('eq', 401)
+  })
+
+  it('guests register without an account, find their ticket, are checked in, and keep it after signing up', () => {
+    const email = `e2e_guest_${timestamp}@example.com`
+    const guest = { attendeeName: 'E2E Guest', attendeeEmail: email, consentAccepted: true }
+
+    publishEvent(`Cypress guest registration ${timestamp}`, 3).then((event) => {
+      let ticket
+
+      // 1. Signed out, the guest endpoint takes the seat and a second try with the same email is refused
+      cy.clearCookies()
+      cy.apiSend('POST', `/api/v1/events/${event.eventId}/guest-registrations`, guest).then((res) => {
+        expect(res.status).to.eq(201)
+        expect(res.body).to.have.property('status', 'CONFIRMED')
+        expect(res.body).to.have.property('registeredAsGuest', true)
+        expect(res.body.event).to.have.property('remainingSeats', 2)
+        ticket = res.body
+      })
+      cy.apiSend('POST', `/api/v1/events/${event.eventId}/guest-registrations`,
+        { ...guest, attendeeEmail: email.toUpperCase() }, { failOnStatusCode: false }).then((res) => {
+        expect(res.status).to.eq(409)
+        expect(res.body).to.have.property('code', 'GUEST_ALREADY_REGISTERED')
+      })
+
+      // 2. The ticket is found with its number and email, and not with someone else's email
+      cy.then(() => cy.apiSend('POST', '/api/v1/guest-registrations/lookup',
+        { registrationNumber: ticket.registrationNumber, email })).then((res) => {
+        expect(res.body).to.have.property('registrationId', ticket.registrationId)
+      })
+      cy.then(() => cy.apiSend('POST', '/api/v1/guest-registrations/lookup',
+        { registrationNumber: ticket.registrationNumber, email: 'someone-else@example.com' },
+        { failOnStatusCode: false })).its('status').should('eq', 404)
+
+      // 3. Staff check the guest in like any other attendee
+      cy.loginAs('admin')
+      cy.then(() => cy.apiSend('POST', `/api/v1/admin/events/${event.eventId}/check-in`,
+        { registrationNumber: ticket.registrationNumber })).then((res) => {
+        expect(res.body).to.have.property('status', 'CHECKED_IN')
+        expect(res.body).to.have.property('registeredAsGuest', true)
+      })
+
+      // 4. Signing up with the same email puts the registration in the new account's history
+      cy.clearCookies()
+      cy.apiRegister({
+        email, password: 'Password123!', firstName: 'E2E', lastName: 'Guest', phoneNumber: '081-234-5678',
+      })
+      cy.apiLogin(email, 'Password123!')
+      cy.request('/api/v1/registrations').then((res) => {
+        const linked = res.body.find((item) => item.registrationId === ticket.registrationId)
+        expect(linked, 'guest registration in history').to.exist
+        expect(linked).to.have.property('status', 'CHECKED_IN')
+      })
+    })
   })
 })
