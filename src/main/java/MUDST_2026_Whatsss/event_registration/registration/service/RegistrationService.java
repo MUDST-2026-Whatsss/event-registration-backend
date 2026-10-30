@@ -36,6 +36,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.EnumMap;
@@ -58,6 +59,7 @@ public class RegistrationService {
 
     private static final String NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Duration CHECK_IN_CLOCK_SKEW = Duration.ofMinutes(5);
 
     private final RegistrationRepository registrationRepository;
     private final RegistrationStatusHistoryRepository historyRepository;
@@ -331,13 +333,29 @@ public class RegistrationService {
         if (previous != RegistrationStatus.CONFIRMED && previous != RegistrationStatus.NO_SHOW) {
             throw new ApiException(ErrorCode.REGISTRATION_NOT_CHECKABLE);
         }
-        Instant now = Instant.now();
+        Instant checkedInAt = checkInTime(request, registration);
         registration.setStatus(RegistrationStatus.CHECKED_IN);
-        registration.setCheckedInAt(now);
+        registration.setCheckedInAt(checkedInAt);
         registration.setCheckedInByUserId(principal.userId());
         registration = registrationRepository.saveAndFlush(registration);
         recordTransition(registration, previous, principal.userId(), null);
         return toAdminResponse(registration);
+    }
+
+    /**
+     * The scan time a synced offline check-in reports, or now. A device clock slightly ahead of the
+     * server is tolerated and capped at now.
+     */
+    private static Instant checkInTime(CheckInRequest request, Registration registration) {
+        Instant now = Instant.now();
+        Instant scannedAt = request.checkedInAt();
+        if (scannedAt == null) {
+            return now;
+        }
+        if (scannedAt.isAfter(now.plus(CHECK_IN_CLOCK_SKEW)) || scannedAt.isBefore(registration.getRegisteredAt())) {
+            throw new ApiException(ErrorCode.INVALID_CHECK_IN_TIME);
+        }
+        return scannedAt.isAfter(now) ? now : scannedAt;
     }
 
     @Transactional(readOnly = true)

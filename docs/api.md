@@ -154,6 +154,10 @@ POST /api/v1/admin/events/{eventId}/check-in
 { "registrationNumber": "REG-7KQ2M9XA4P" }
 ```
 
+Offline check-ins synced later may add `"checkedInAt"` (ISO-8601) with the time the code was
+scanned, so the record shows the arrival rather than the sync time. Without it the server time is
+used. A time up to 5 minutes ahead of the server is capped at now.
+
 A successful check-in returns the participant list row with `status` `CHECKED_IN` and
 `checkedInAt` set, records the staff member in `checked_in_by_user_id`, and appends a status history
 row. A checked-in registration still counts toward capacity.
@@ -165,6 +169,7 @@ row. A checked-in registration still counts toward capacity.
 | `REGISTRATION_NOT_FOUND` | 404 | Unknown number or a number from another event |
 | `ALREADY_CHECKED_IN` | 409 | The registration was already checked in |
 | `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` or `NO_SHOW` (pending payment or cancelled) |
+| `INVALID_CHECK_IN_TIME` | 400 | `checkedInAt` is more than 5 minutes in the future or before the registration |
 
 ### Event analytics
 
