@@ -22,8 +22,9 @@ import java.util.UUID;
 
 /**
  * A signed-in participant's own registrations. Guests are rejected by the security chain before
- * reaching here; registration listing lives under {@code /registrations} rather than
- * {@code /events/**} because public GETs on the latter are open to everyone.
+ * reaching here and register through {@link GuestRegistrationController} instead; registration
+ * listing lives under {@code /registrations} rather than {@code /events/**} because public GETs on
+ * the latter are open to everyone.
  */
 @RestController
 @RequestMapping("/api/v1")

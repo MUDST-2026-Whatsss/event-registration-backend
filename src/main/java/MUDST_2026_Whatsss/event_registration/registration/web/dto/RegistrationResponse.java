@@ -19,5 +19,6 @@ public record RegistrationResponse(
         Instant cancelledAt,
         String cancellationReason,
         boolean cancellable,
+        boolean registeredAsGuest,
         EventSummaryResponse event) {
 }

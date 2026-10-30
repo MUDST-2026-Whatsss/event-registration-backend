@@ -17,5 +17,6 @@ public record AdminRegistrationResponse(
         Instant confirmedAt,
         Instant cancelledAt,
         String cancellationReason,
-        Instant checkedInAt) {
+        Instant checkedInAt,
+        boolean registeredAsGuest) {
 }

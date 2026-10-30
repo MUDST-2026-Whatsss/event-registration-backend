@@ -16,8 +16,45 @@ import java.util.UUID;
 
 public interface RegistrationRepository extends JpaRepository<Registration, UUID> {
 
-    @Query("select r.event.eventId from Registration r where r.registrationId = :id and r.registeredByUserId = :userId")
+    /** Ownership follows the participant, so a linked guest registration belongs to its new account. */
+    @Query("""
+            select r.event.eventId from Registration r
+            where r.registrationId = :id
+              and r.participantId = (select p.participantId from Participant p where p.userId = :userId)
+            """)
     Optional<UUID> findOwnedEventId(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Query("""
+            select count(r) > 0 from Registration r
+            where r.event.eventId = :eventId
+              and r.participantId is null
+              and lower(r.attendeeEmail) = :normalizedEmail
+              and r.status in :statuses
+            """)
+    boolean existsGuestRegistration(
+            @Param("eventId") UUID eventId,
+            @Param("normalizedEmail") String normalizedEmail,
+            @Param("statuses") Collection<RegistrationStatus> statuses);
+
+    @EntityGraph(attributePaths = {"event", "event.category"})
+    @Query("""
+            select r from Registration r
+            where r.registrationNumber = :registrationNumber
+              and r.registeredAsGuest = true
+              and lower(r.attendeeEmail) = :normalizedEmail
+            """)
+    Optional<Registration> findGuestTicket(
+            @Param("registrationNumber") String registrationNumber,
+            @Param("normalizedEmail") String normalizedEmail);
+
+    /** Newest first, so if one event has several guest rows the latest is the one linked. */
+    @Query("""
+            select r from Registration r
+            where r.participantId is null
+              and lower(r.attendeeEmail) = :normalizedEmail
+            order by r.registeredAt desc
+            """)
+    List<Registration> findUnlinkedGuestRegistrations(@Param("normalizedEmail") String normalizedEmail);
 
     Optional<Registration> findByEvent_EventIdAndParticipantId(UUID eventId, UUID participantId);
 

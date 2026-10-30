@@ -231,9 +231,10 @@ class RegistrationIT extends PostgresIntegrationTest {
         assertThat(eventRepository.findById(published).orElseThrow().getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
 
+    /** Guests register through the guest endpoint (see GuestRegistrationIT); the member ones stay closed. */
     @Test
-    void guestsCannotRegisterOrListRegistrations() throws Exception {
-        UUID eventId = fixtures.publishedEvent(admin, "Guest blocked", 5);
+    void memberRegistrationEndpointsStillRequireSignIn() throws Exception {
+        UUID eventId = fixtures.publishedEvent(admin, "Member endpoints closed to guests", 5);
 
         mockMvc.perform(post("/api/v1/events/{eventId}/registrations", eventId)
                         .with(csrf())

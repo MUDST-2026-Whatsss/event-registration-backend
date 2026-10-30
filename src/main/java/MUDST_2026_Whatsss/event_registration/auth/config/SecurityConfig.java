@@ -124,6 +124,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/events/**").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/events/*/guest-registrations",
+                                "/api/v1/guest-registrations/lookup").permitAll()
 
                         .anyRequest().authenticated())
 
