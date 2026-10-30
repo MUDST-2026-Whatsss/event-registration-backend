@@ -1,5 +1,6 @@
+import { scenario } from '../support/scenarios.js'
 describe('Role-based Access Control', () => {
-  it('blocks guests and participants from administration endpoints', () => {
+  scenario('access_admin_denied', function access_admin_denied() {
     cy.request({ url: '/api/v1/admin/events', failOnStatusCode: false }).its('status').should('eq', 401)
 
     cy.loginAs('participant')
@@ -8,7 +9,7 @@ describe('Role-based Access Control', () => {
     cy.request({ url: '/api/v1/admin/audit-logs', failOnStatusCode: false }).its('status').should('eq', 403)
   })
 
-  it('lets an admin manage events but not super-admin governance', () => {
+  scenario('access_super_admin_denied', function access_super_admin_denied() {
     cy.loginAs('admin')
     cy.request('/api/v1/admin/events').its('status').should('eq', 200)
     cy.request('/api/v1/admin/events/stats').its('body').should('have.property', 'total')
@@ -19,7 +20,7 @@ describe('Role-based Access Control', () => {
     cy.request({ url: '/api/v1/admin/audit-logs', failOnStatusCode: false }).its('status').should('eq', 403)
   })
 
-  it('lets a super admin read users, roles, permissions, and audit history', () => {
+  scenario('super_admin_access', function super_admin_access() {
     cy.loginAs('superAdmin')
     cy.request('/api/v1/admin/users').then((res) => {
       expect(res.status).to.eq(200)
@@ -36,7 +37,7 @@ describe('Role-based Access Control', () => {
     cy.request('/api/v1/admin/event-admins').its('status').should('eq', 200)
   })
 
-  it('lets a super admin create and delete a custom role', () => {
+  scenario('role_create_delete', function role_create_delete() {
     const code = `CYPRESS_ROLE_${Date.now()}`
     cy.loginAs('superAdmin')
     cy.request('/api/v1/admin/permissions').then((res) => {

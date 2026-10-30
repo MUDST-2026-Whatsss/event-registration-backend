@@ -1,9 +1,10 @@
+import { scenario } from '../support/scenarios.js'
 import { publishEvent } from '../support/events.js'
 
 describe('Registration, Cancellation and Check-in', () => {
   const timestamp = Date.now()
 
-  it('participants register until the event is full, cancel, and are checked in by the admin', () => {
+  scenario('registration_check_in', function registration_check_in() {
     publishEvent(`Cypress registration ${timestamp}`, 2).then((event) => {
       let first
       let second
@@ -79,7 +80,7 @@ describe('Registration, Cancellation and Check-in', () => {
     })
   })
 
-  it('cancelling the event cancels every active registration', () => {
+  scenario('registration_event_cancel', function registration_event_cancel() {
     publishEvent(`Cypress cancelled event ${timestamp}`, 5).then((event) => {
       cy.loginAs('participant')
       cy.apiSend('POST', `/api/v1/events/${event.eventId}/registrations`, { consentAccepted: true }).then((res) => {
@@ -103,14 +104,14 @@ describe('Registration, Cancellation and Check-in', () => {
     })
   })
 
-  it('member registration endpoints still require sign-in', () => {
+  scenario('registration_login_required', function registration_login_required() {
     // Authentication is checked before the event is looked up, so any event ID works here.
     cy.apiSend('POST', '/api/v1/events/00000000-0000-0000-0000-000000000000/registrations', { consentAccepted: true },
       { failOnStatusCode: false }).its('status').should('eq', 401)
     cy.request({ url: '/api/v1/registrations', failOnStatusCode: false }).its('status').should('eq', 401)
   })
 
-  it('guests register without an account, find their ticket, are checked in, and keep it after signing up', () => {
+  scenario('guest_registration_link', function guest_registration_link() {
     const email = `e2e_guest_${timestamp}@example.com`
     const guest = { attendeeName: 'E2E Guest', attendeeEmail: email, consentAccepted: true }
 

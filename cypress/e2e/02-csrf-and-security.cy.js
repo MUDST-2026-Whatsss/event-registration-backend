@@ -1,5 +1,6 @@
+import { scenario } from '../support/scenarios.js'
 describe('CSRF and Security Protection', () => {
-  it('fetches a valid CSRF token', () => {
+  scenario('security_csrf_token', function security_csrf_token() {
     cy.request({
       method: 'GET',
       url: '/api/v1/auth/csrf',
@@ -10,7 +11,7 @@ describe('CSRF and Security Protection', () => {
     })
   })
 
-  it('rejects POST request without X-XSRF-TOKEN header with 403 Forbidden', () => {
+  scenario('security_csrf_missing', function security_csrf_missing() {
     cy.request({
       method: 'POST',
       url: '/api/v1/auth/login',
@@ -25,7 +26,7 @@ describe('CSRF and Security Protection', () => {
     })
   })
 
-  it('rejects unauthenticated request to /api/v1/auth/me with 401 Unauthorized', () => {
+  scenario('security_login_required', function security_login_required() {
     cy.request({
       method: 'GET',
       url: '/api/v1/auth/me',
