@@ -25,6 +25,7 @@ import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentReg
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventAnalyticsResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestTicketLookupRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
@@ -36,6 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -337,6 +340,48 @@ public class RegistrationService {
     }
 
     @Transactional(readOnly = true)
+    public EventAnalyticsResponse analytics(UUID eventId, AuthenticatedUser principal) {
+        Event event = eventRepository.findById(eventId).orElseThrow(EventNotFoundException::new);
+        requireEventScope(event, principal);
+
+        Map<RegistrationStatus, Long> byStatus = new EnumMap<>(RegistrationStatus.class);
+        long guestSignups = 0;
+        for (Object[] row : registrationRepository.countByStatusAndGuest(eventId)) {
+            long count = ((Number) row[2]).longValue();
+            byStatus.merge(RegistrationStatus.valueOf((String) row[0]), count, Long::sum);
+            if ((Boolean) row[1]) {
+                guestSignups += count;
+            }
+        }
+        long signups = byStatus.values().stream().mapToLong(Long::longValue).sum();
+        long dropOffs = byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_USER, 0L)
+                + byStatus.getOrDefault(RegistrationStatus.PAYMENT_EXPIRED, 0L);
+        long checkedIn = byStatus.getOrDefault(RegistrationStatus.CHECKED_IN, 0L);
+        long noShows = byStatus.getOrDefault(RegistrationStatus.NO_SHOW, 0L);
+        // Before the end, unchecked attendees may still arrive, so a show rate would mislead.
+        boolean ended = event.getEndAt() != null && !Instant.now().isBefore(event.getEndAt());
+
+        List<EventAnalyticsResponse.DailySignups> daily = registrationRepository
+                .countDailySignups(eventId, event.getTimezone()).stream()
+                .map(row -> new EventAnalyticsResponse.DailySignups(
+                        LocalDate.parse((String) row[0]), ((Number) row[1]).longValue()))
+                .toList();
+        return new EventAnalyticsResponse(
+                signups,
+                signups - guestSignups,
+                guestSignups,
+                dropOffs,
+                ratio(dropOffs, signups),
+                byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_ADMIN, 0L),
+                byStatus.getOrDefault(RegistrationStatus.CONFIRMED, 0L),
+                checkedIn,
+                noShows,
+                ended ? ratio(checkedIn, checkedIn + noShows) : null,
+                ended,
+                daily);
+    }
+
+    @Transactional(readOnly = true)
     public Page<AdminRecentRegistrationResponse> listRecent(
             Pageable pageable, AuthenticatedUser principal) {
         Page<Registration> registrations = principal.hasRole(RoleCodes.SUPER_ADMIN)
@@ -444,6 +489,10 @@ public class RegistrationService {
                 registration.isRegisteredAsGuest(),
                 eventMapper.toSummaryResponse(
                         event, eventRepository.countActiveRegistrations(event.getEventId())));
+    }
+
+    private static Double ratio(long part, long whole) {
+        return whole == 0 ? null : (double) part / whole;
     }
 
     private static AdminRegistrationResponse toAdminResponse(Registration registration) {
