@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -115,8 +116,9 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
     List<Object[]> countDailySignups(@Param("eventId") UUID eventId, @Param("timezone") String timezone);
 
     /**
-     * Marks confirmed registrations of events that have ended as {@code NO_SHOW} and records the
-     * transition. The status filter makes a second, concurrent run skip rows the first one took.
+     * Marks confirmed registrations of events that ended before {@code endedBefore} as
+     * {@code NO_SHOW} and records the transition. The status filter makes a second, concurrent run
+     * skip rows the first one took.
      *
      * @return the number of registrations marked
      */
@@ -132,13 +134,13 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
                 from events e
                 where e.event_id = r.event_id
                   and r.status = 'CONFIRMED'
-                  and e.end_at < now()
+                  and e.end_at < :endedBefore
                 returning r.registration_id
             )
             insert into registration_status_history (registration_id, from_status, to_status, reason)
             select registration_id, 'CONFIRMED', 'NO_SHOW', 'Event ended without a check-in' from marked
             """, nativeQuery = true)
-    int markNoShowsForEndedEvents();
+    int markNoShowsForEndedEvents(@Param("endedBefore") Instant endedBefore);
 
     boolean existsByRegistrationNumber(String registrationNumber);
 }

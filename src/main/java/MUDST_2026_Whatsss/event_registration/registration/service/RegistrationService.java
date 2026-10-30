@@ -300,7 +300,11 @@ public class RegistrationService {
         }
     }
 
-    /** Marks a confirmed attendee as present, matched by the registration number on their QR code. */
+    /**
+     * Marks a confirmed attendee as present, matched by the registration number on their QR code.
+     * A {@code NO_SHOW} can still be checked in: the attendee may have arrived after the event's
+     * scheduled end, or an offline check-in may be synced after the no-show sweep ran.
+     */
     @Transactional
     public AdminRegistrationResponse checkIn(
             UUID eventId, CheckInRequest request, AuthenticatedUser principal) {
@@ -317,7 +321,8 @@ public class RegistrationService {
         if (registration.getStatus() == RegistrationStatus.CHECKED_IN) {
             throw new ApiException(ErrorCode.ALREADY_CHECKED_IN);
         }
-        if (registration.getStatus() != RegistrationStatus.CONFIRMED) {
+        RegistrationStatus previous = registration.getStatus();
+        if (previous != RegistrationStatus.CONFIRMED && previous != RegistrationStatus.NO_SHOW) {
             throw new ApiException(ErrorCode.REGISTRATION_NOT_CHECKABLE);
         }
         Instant now = Instant.now();
@@ -325,7 +330,7 @@ public class RegistrationService {
         registration.setCheckedInAt(now);
         registration.setCheckedInByUserId(principal.userId());
         registration = registrationRepository.saveAndFlush(registration);
-        recordTransition(registration, RegistrationStatus.CONFIRMED, principal.userId(), null);
+        recordTransition(registration, previous, principal.userId(), null);
         return toAdminResponse(registration);
     }
 
@@ -357,9 +362,11 @@ public class RegistrationService {
         long dropOffs = byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_USER, 0L)
                 + byStatus.getOrDefault(RegistrationStatus.PAYMENT_EXPIRED, 0L);
         long checkedIn = byStatus.getOrDefault(RegistrationStatus.CHECKED_IN, 0L);
-        long noShows = byStatus.getOrDefault(RegistrationStatus.NO_SHOW, 0L);
+        long confirmed = byStatus.getOrDefault(RegistrationStatus.CONFIRMED, 0L);
         // Before the end, unchecked attendees may still arrive, so a show rate would mislead.
         boolean ended = event.getEndAt() != null && !Instant.now().isBefore(event.getEndAt());
+        // After the end, attendees not yet swept to NO_SHOW (grace period) have not shown up either.
+        long noShows = byStatus.getOrDefault(RegistrationStatus.NO_SHOW, 0L) + (ended ? confirmed : 0);
 
         List<EventAnalyticsResponse.DailySignups> daily = registrationRepository
                 .countDailySignups(eventId, event.getTimezone()).stream()
@@ -373,7 +380,7 @@ public class RegistrationService {
                 dropOffs,
                 ratio(dropOffs, signups),
                 byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_ADMIN, 0L),
-                byStatus.getOrDefault(RegistrationStatus.CONFIRMED, 0L),
+                confirmed,
                 checkedIn,
                 noShows,
                 ended ? ratio(checkedIn, checkedIn + noShows) : null,

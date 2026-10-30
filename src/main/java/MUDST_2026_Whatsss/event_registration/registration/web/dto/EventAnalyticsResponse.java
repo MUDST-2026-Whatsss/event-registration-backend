@@ -10,6 +10,9 @@ import java.util.List;
  * ({@code PAYMENT_EXPIRED}); administrator cancellations are reported apart and a cancelled event
  * is not counted. {@code showRate} is {@code null} until the event has ended, and both rates are
  * {@code null} when there is nothing to divide by.
+ *
+ * <p>Once the event has ended, {@code noShows} also counts attendees still {@code CONFIRMED},
+ * who have not yet been swept to {@code NO_SHOW}; {@code confirmed} stays the raw status count.
  */
 public record EventAnalyticsResponse(
         long signups,

@@ -13,6 +13,7 @@ import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventAnalyticsResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestRegistrationRequest;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,7 @@ class EventAnalyticsIT extends PostgresIntegrationTest {
     @Autowired private EventRepository eventRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private MockMvc mockMvc;
+    @Autowired private EntityManager entityManager;
 
     private RegistrationFixtures fixtures;
     private AuthenticatedUser admin;
@@ -87,12 +89,18 @@ class EventAnalyticsIT extends PostgresIntegrationTest {
         assertThat(during.dailySignups()).containsExactly(new EventAnalyticsResponse.DailySignups(
                 LocalDate.now(ZoneId.of("Asia/Bangkok")), 6));
 
-        endEvent(eventId);
+        endEvent(eventId, "1 day");
+        // Counted as a no-show as soon as the event ends, before the sweep changes the status.
+        var ended = service.analytics(eventId, admin);
+        assertThat(ended.eventEnded()).isTrue();
+        assertThat(ended.confirmed()).isEqualTo(1);
+        assertThat(ended.noShows()).isEqualTo(1);
+        assertThat(ended.showRate()).isCloseTo(2.0 / 3, within(1e-9));
+
         assertThat(noShowSweeper.markNoShows()).isEqualTo(1);
         assertThat(noShowSweeper.markNoShows()).isZero();
 
         var after = service.analytics(eventId, admin);
-        assertThat(after.eventEnded()).isTrue();
         assertThat(after.confirmed()).isZero();
         assertThat(after.noShows()).isEqualTo(1);
         assertThat(after.showRate()).isCloseTo(2.0 / 3, within(1e-9));
@@ -116,6 +124,40 @@ class EventAnalyticsIT extends PostgresIntegrationTest {
         String status = jdbcTemplate.queryForObject(
                 "select status from registrations where registration_id = ?", String.class, registration.registrationId());
         assertThat(status).isEqualTo(RegistrationStatus.CONFIRMED.name());
+    }
+
+    @Test
+    void sweepWaitsForTheGracePeriodAfterTheEventEnds() {
+        UUID eventId = fixtures.publishedEvent(admin, "Analytics overrun", 5);
+        var registration = service.register(eventId, consent(), fixtures.participant("overrun", "Overrun", null));
+        endEvent(eventId, "30 minutes");
+
+        assertThat(noShowSweeper.markNoShows()).isZero();
+
+        String status = jdbcTemplate.queryForObject(
+                "select status from registrations where registration_id = ?", String.class, registration.registrationId());
+        assertThat(status).isEqualTo(RegistrationStatus.CONFIRMED.name());
+    }
+
+    @Test
+    void lateArrivalMarkedNoShowCanStillBeCheckedIn() {
+        UUID eventId = fixtures.publishedEvent(admin, "Analytics late arrival", 5);
+        var late = service.register(eventId, consent(), fixtures.participant("late", "Late", null));
+        endEvent(eventId, "1 day");
+        noShowSweeper.markNoShows();
+
+        var checkedIn = service.checkIn(eventId, new CheckInRequest(late.registrationNumber()), admin);
+
+        assertThat(checkedIn.status()).isEqualTo(RegistrationStatus.CHECKED_IN);
+        entityManager.flush();
+        Integer history = jdbcTemplate.queryForObject("""
+                select count(*) from registration_status_history
+                where registration_id = ? and from_status = 'NO_SHOW' and to_status = 'CHECKED_IN'""",
+                Integer.class, late.registrationId());
+        assertThat(history).isEqualTo(1);
+        var analytics = service.analytics(eventId, admin);
+        assertThat(analytics.noShows()).isZero();
+        assertThat(analytics.showRate()).isEqualTo(1.0);
     }
 
     @Test
@@ -163,13 +205,18 @@ class EventAnalyticsIT extends PostgresIntegrationTest {
                 where registration_id = ?""", status, registrationId);
     }
 
-    private void endEvent(UUID eventId) {
+    /** Moves the event into the past so that it ended {@code endedAgo} (a Postgres interval) ago. */
+    private void endEvent(UUID eventId, String endedAgo) {
+        // Plain JDBC bypasses Hibernate: write pending changes first and drop the stale event after.
+        entityManager.flush();
         jdbcTemplate.update("""
                 update events set registration_start_at = now() - interval '3 days',
-                    registration_end_at = now() - interval '2 days',
-                    start_at = now() - interval '2 days', end_at = now() - interval '1 day',
+                    registration_end_at = now() - cast(? as interval) - interval '2 hours',
+                    start_at = now() - cast(? as interval) - interval '1 hour',
+                    end_at = now() - cast(? as interval),
                     cancellation_deadline_at = null
-                where event_id = ?""", eventId);
+                where event_id = ?""", endedAgo, endedAgo, endedAgo, eventId);
+        entityManager.clear();
     }
 
     private static UsernamePasswordAuthenticationToken token(AuthenticatedUser user) {

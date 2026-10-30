@@ -159,7 +159,7 @@ row. A checked-in registration still counts toward capacity.
 | `INVALID_EVENT_STATE` | 409 | Event is not published |
 | `REGISTRATION_NOT_FOUND` | 404 | Unknown number or a number from another event |
 | `ALREADY_CHECKED_IN` | 409 | The registration was already checked in |
-| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` (pending payment or cancelled) |
+| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` or `NO_SHOW` (pending payment or cancelled) |
 
 ### Event analytics
 
@@ -178,10 +178,12 @@ GET /api/v1/admin/events/{eventId}/analytics
 - `dropOffs` = `CANCELLED_BY_USER` + `PAYMENT_EXPIRED`. Administrator cancellations are
   `cancelledByAdmin`; registrations cancelled with the event are in neither.
 - `showRate` = `checkedIn` / (`checkedIn` + `noShows`), and is `null` until `endAt` has passed.
-  Rates are `null` when there is nothing to divide by.
+  Once the event has ended, `noShows` also counts registrations still `CONFIRMED`; `confirmed` is the
+  raw status count. Rates are `null` when there is nothing to divide by.
 - `dailySignups` groups by the registration day in the event's own timezone, oldest first.
-- A scheduled job marks registrations still `CONFIRMED` after `endAt` as `NO_SHOW`, every
-  `NO_SHOW_SWEEP_INTERVAL` (default 5 minutes). Such a registration can no longer be checked in.
+- A scheduled job marks registrations still `CONFIRMED` as `NO_SHOW` once `NO_SHOW_GRACE_PERIOD`
+  (default 6 hours) has passed since `endAt`, checking every `NO_SHOW_SWEEP_INTERVAL` (default 5
+  minutes). A `NO_SHOW` can still be checked in, for late arrivals and offline check-ins synced later.
 
 An administrator not assigned to the event gets `EVENT_NOT_FOUND` (404).
 
