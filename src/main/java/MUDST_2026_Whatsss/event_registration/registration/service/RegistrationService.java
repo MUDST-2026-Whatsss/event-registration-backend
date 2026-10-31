@@ -147,15 +147,15 @@ public class RegistrationService {
     }
 
     /**
-     * A visitor registers without an account. Only free events are open to guests, because paying
-     * needs a signed-in owner. The email is how the guest finds the ticket again and how it is linked
-     * to an account later, so one email holds at most one active seat per event.
+     * A visitor registers without an account. Paid events use the same opt-in mock payment as
+     * members. Email links the ticket to an account later; one email holds one active seat per event.
      */
     @Transactional
     public RegistrationResponse registerGuest(UUID eventId, GuestRegistrationRequest request) {
         Instant now = Instant.now();
         Event event = lockOpenEvent(eventId, now);
-        if (event.getEventType() == EventType.PAID) {
+        boolean paid = event.getEventType() == EventType.PAID;
+        if (paid && !mockPaymentsEnabled) {
             throw new ApiException(ErrorCode.GUEST_PAID_REGISTRATION_UNAVAILABLE);
         }
         String email = request.attendeeEmail().trim();
@@ -169,13 +169,13 @@ public class RegistrationService {
                 .registrationNumber(newRegistrationNumber())
                 .event(event)
                 .registeredAsGuest(true)
-                .status(RegistrationStatus.CONFIRMED)
+                .status(paid ? RegistrationStatus.PENDING_PAYMENT : RegistrationStatus.CONFIRMED)
                 .attendeeName(request.attendeeName().trim())
                 .attendeeEmail(email)
                 .attendeePhone(firstNonBlank(request.attendeePhone()))
                 .consentAcceptedAt(now)
                 .registeredAt(now)
-                .confirmedAt(now)
+                .confirmedAt(paid ? null : now)
                 .build());
         recordTransition(registration, null, null, null);
         return toResponse(registration, now, false);
@@ -230,6 +230,27 @@ public class RegistrationService {
             throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
         }
         Registration registration = lockedOwned(registrationId, principal);
+        return finishMockPayment(registration, principal.userId(), false);
+    }
+
+    /** Demo-only: guests prove ticket access with the same number/email pair used by lookup. */
+    @Transactional
+    public RegistrationResponse confirmGuestMockPayment(GuestTicketLookupRequest request) {
+        if (!mockPaymentsEnabled) {
+            throw new ApiException(ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
+        }
+        String number = request.registrationNumber().trim().toUpperCase(Locale.ROOT);
+        String email = normalizeEmail(request.email());
+        UUID eventId = registrationRepository.findGuestEventId(number, email)
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        eventRepository.findByIdForUpdate(eventId)
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        Registration registration = registrationRepository.findGuestTicket(number, email)
+                .orElseThrow(() -> new ApiException(ErrorCode.REGISTRATION_NOT_FOUND));
+        return finishMockPayment(registration, null, true);
+    }
+
+    private RegistrationResponse finishMockPayment(Registration registration, UUID actorUserId, boolean guest) {
         Event event = registration.getEvent();
         Instant now = Instant.now();
         if (event.getEventType() != EventType.PAID || event.getStatus() != EventStatus.PUBLISHED) {
@@ -237,7 +258,7 @@ public class RegistrationService {
         }
         // Repeated confirmation returns the persisted result without duplicate history/seats.
         if (registration.getStatus() == RegistrationStatus.CONFIRMED) {
-            return toResponse(registration, now);
+            return guest ? toResponse(registration, now, false) : toResponse(registration, now);
         }
         if (registration.getStatus() != RegistrationStatus.PENDING_PAYMENT) {
             throw new ApiException(ErrorCode.INVALID_REGISTRATION_STATE);
@@ -248,9 +269,9 @@ public class RegistrationService {
         registration.setStatus(RegistrationStatus.CONFIRMED);
         registration.setConfirmedAt(now);
         registration = registrationRepository.saveAndFlush(registration);
-        recordTransition(registration, RegistrationStatus.PENDING_PAYMENT, principal.userId(),
+        recordTransition(registration, RegistrationStatus.PENDING_PAYMENT, actorUserId,
                 "MOCK_PAYMENT_CONFIRMED: no real payment collected");
-        return toResponse(registration, now);
+        return guest ? toResponse(registration, now, false) : toResponse(registration, now);
     }
 
     @Transactional(readOnly = true)

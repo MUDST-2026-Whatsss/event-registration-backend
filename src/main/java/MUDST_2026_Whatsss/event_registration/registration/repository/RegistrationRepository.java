@@ -48,6 +48,17 @@ public interface RegistrationRepository extends JpaRepository<Registration, UUID
             @Param("registrationNumber") String registrationNumber,
             @Param("normalizedEmail") String normalizedEmail);
 
+    /** Resolve only the event ID before taking its lock; do not load stale payment state first. */
+    @Query("""
+            select r.event.eventId from Registration r
+            where r.registrationNumber = :registrationNumber
+              and r.registeredAsGuest = true
+              and lower(r.attendeeEmail) = :normalizedEmail
+            """)
+    Optional<UUID> findGuestEventId(
+            @Param("registrationNumber") String registrationNumber,
+            @Param("normalizedEmail") String normalizedEmail);
+
     /** Newest first, so if one event has several guest rows the latest is the one linked. */
     @Query("""
             select r from Registration r
