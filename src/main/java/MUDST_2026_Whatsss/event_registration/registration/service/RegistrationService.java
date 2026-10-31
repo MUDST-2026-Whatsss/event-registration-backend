@@ -25,6 +25,7 @@ import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentReg
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CreateRegistrationRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventAnalyticsResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestRegistrationRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.GuestTicketLookupRequest;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.RegistrationResponse;
@@ -35,7 +36,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -55,6 +59,7 @@ public class RegistrationService {
 
     private static final String NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Duration CHECK_IN_CLOCK_SKEW = Duration.ofMinutes(5);
 
     private final RegistrationRepository registrationRepository;
     private final RegistrationStatusHistoryRepository historyRepository;
@@ -106,6 +111,12 @@ public class RegistrationService {
             }
             throw new ApiException(ErrorCode.ALREADY_REGISTERED);
         }
+        String email = firstNonBlank(request.attendeeEmail(), principal.email());
+        if (registrationRepository.existsActiveRegistrationByEmail(
+                eventId, normalizeEmail(email), RegistrationStatus.ACTIVE)) {
+            throw new ApiException(ErrorCode.ALREADY_REGISTERED,
+                    "This email address is already registered for this event.");
+        }
         requireSeat(event);
 
         RegistrationStatus previous = registration == null ? null : registration.getStatus();
@@ -119,7 +130,7 @@ public class RegistrationService {
         registration.setRegisteredByUserId(principal.userId());
         registration.setStatus(paid ? RegistrationStatus.PENDING_PAYMENT : RegistrationStatus.CONFIRMED);
         registration.setAttendeeName(attendeeName(request, participant, principal));
-        registration.setAttendeeEmail(firstNonBlank(request.attendeeEmail(), principal.email()));
+        registration.setAttendeeEmail(email);
         registration.setAttendeePhone(attendeePhone(request, participant));
         registration.setConsentAcceptedAt(now);
         registration.setRegisteredAt(now);
@@ -148,7 +159,7 @@ public class RegistrationService {
             throw new ApiException(ErrorCode.GUEST_PAID_REGISTRATION_UNAVAILABLE);
         }
         String email = request.attendeeEmail().trim();
-        if (registrationRepository.existsGuestRegistration(
+        if (registrationRepository.existsActiveRegistrationByEmail(
                 eventId, normalizeEmail(email), RegistrationStatus.ACTIVE)) {
             throw new ApiException(ErrorCode.GUEST_ALREADY_REGISTERED);
         }
@@ -297,7 +308,11 @@ public class RegistrationService {
         }
     }
 
-    /** Marks a confirmed attendee as present, matched by the registration number on their QR code. */
+    /**
+     * Marks a confirmed attendee as present, matched by the registration number on their QR code.
+     * A {@code NO_SHOW} can still be checked in: the attendee may have arrived after the event's
+     * scheduled end, or an offline check-in may be synced after the no-show sweep ran.
+     */
     @Transactional
     public AdminRegistrationResponse checkIn(
             UUID eventId, CheckInRequest request, AuthenticatedUser principal) {
@@ -314,16 +329,33 @@ public class RegistrationService {
         if (registration.getStatus() == RegistrationStatus.CHECKED_IN) {
             throw new ApiException(ErrorCode.ALREADY_CHECKED_IN);
         }
-        if (registration.getStatus() != RegistrationStatus.CONFIRMED) {
+        RegistrationStatus previous = registration.getStatus();
+        if (previous != RegistrationStatus.CONFIRMED && previous != RegistrationStatus.NO_SHOW) {
             throw new ApiException(ErrorCode.REGISTRATION_NOT_CHECKABLE);
         }
-        Instant now = Instant.now();
+        Instant checkedInAt = checkInTime(request, registration);
         registration.setStatus(RegistrationStatus.CHECKED_IN);
-        registration.setCheckedInAt(now);
+        registration.setCheckedInAt(checkedInAt);
         registration.setCheckedInByUserId(principal.userId());
         registration = registrationRepository.saveAndFlush(registration);
-        recordTransition(registration, RegistrationStatus.CONFIRMED, principal.userId(), null);
+        recordTransition(registration, previous, principal.userId(), null);
         return toAdminResponse(registration);
+    }
+
+    /**
+     * The scan time a synced offline check-in reports, or now. A device clock slightly ahead of the
+     * server is tolerated and capped at now.
+     */
+    private static Instant checkInTime(CheckInRequest request, Registration registration) {
+        Instant now = Instant.now();
+        Instant scannedAt = request.checkedInAt();
+        if (scannedAt == null) {
+            return now;
+        }
+        if (scannedAt.isAfter(now.plus(CHECK_IN_CLOCK_SKEW)) || scannedAt.isBefore(registration.getRegisteredAt())) {
+            throw new ApiException(ErrorCode.INVALID_CHECK_IN_TIME);
+        }
+        return scannedAt.isAfter(now) ? now : scannedAt;
     }
 
     @Transactional(readOnly = true)
@@ -334,6 +366,50 @@ public class RegistrationService {
         String normalizedQuery = query == null ? "" : query.trim();
         return registrationRepository.findForEvent(eventId, normalizedQuery, pageable)
                 .map(RegistrationService::toAdminResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public EventAnalyticsResponse analytics(UUID eventId, AuthenticatedUser principal) {
+        Event event = eventRepository.findById(eventId).orElseThrow(EventNotFoundException::new);
+        requireEventScope(event, principal);
+
+        Map<RegistrationStatus, Long> byStatus = new EnumMap<>(RegistrationStatus.class);
+        long guestSignups = 0;
+        for (Object[] row : registrationRepository.countByStatusAndGuest(eventId)) {
+            long count = ((Number) row[2]).longValue();
+            byStatus.merge(RegistrationStatus.valueOf((String) row[0]), count, Long::sum);
+            if ((Boolean) row[1]) {
+                guestSignups += count;
+            }
+        }
+        long signups = byStatus.values().stream().mapToLong(Long::longValue).sum();
+        long dropOffs = byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_USER, 0L)
+                + byStatus.getOrDefault(RegistrationStatus.PAYMENT_EXPIRED, 0L);
+        long checkedIn = byStatus.getOrDefault(RegistrationStatus.CHECKED_IN, 0L);
+        long confirmed = byStatus.getOrDefault(RegistrationStatus.CONFIRMED, 0L);
+        // Before the end, unchecked attendees may still arrive, so a show rate would mislead.
+        boolean ended = event.getEndAt() != null && !Instant.now().isBefore(event.getEndAt());
+        // After the end, attendees not yet swept to NO_SHOW (grace period) have not shown up either.
+        long noShows = byStatus.getOrDefault(RegistrationStatus.NO_SHOW, 0L) + (ended ? confirmed : 0);
+
+        List<EventAnalyticsResponse.DailySignups> daily = registrationRepository
+                .countDailySignups(eventId, event.getTimezone()).stream()
+                .map(row -> new EventAnalyticsResponse.DailySignups(
+                        LocalDate.parse((String) row[0]), ((Number) row[1]).longValue()))
+                .toList();
+        return new EventAnalyticsResponse(
+                signups,
+                signups - guestSignups,
+                guestSignups,
+                dropOffs,
+                ratio(dropOffs, signups),
+                byStatus.getOrDefault(RegistrationStatus.CANCELLED_BY_ADMIN, 0L),
+                confirmed,
+                checkedIn,
+                noShows,
+                ended ? ratio(checkedIn, checkedIn + noShows) : null,
+                ended,
+                daily);
     }
 
     @Transactional(readOnly = true)
@@ -444,6 +520,10 @@ public class RegistrationService {
                 registration.isRegisteredAsGuest(),
                 eventMapper.toSummaryResponse(
                         event, eventRepository.countActiveRegistrations(event.getEventId())));
+    }
+
+    private static Double ratio(long part, long whole) {
+        return whole == 0 ? null : (double) part / whole;
     }
 
     private static AdminRegistrationResponse toAdminResponse(Registration registration) {

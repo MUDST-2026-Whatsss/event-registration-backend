@@ -5,6 +5,7 @@ import MUDST_2026_Whatsss.event_registration.registration.service.RegistrationSe
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRecentRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.AdminRegistrationResponse;
 import MUDST_2026_Whatsss.event_registration.registration.web.dto.CheckInRequest;
+import MUDST_2026_Whatsss.event_registration.registration.web.dto.EventAnalyticsResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Participant list and check-in for an event, scoped to the event's assigned administrators. */
+/** Participant list, analytics and check-in for an event, scoped to the event's assigned administrators. */
 @RestController
 @RequestMapping("/api/v1/admin")
 @PreAuthorize("hasAuthority('REGISTRATION_VIEW_ALL') or hasRole('SUPER_ADMIN')")
@@ -42,6 +43,13 @@ public class AdminRegistrationController {
             Pageable pageable,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return service.listForEvent(eventId, query, pageable, user);
+    }
+
+    @GetMapping("/events/{eventId}/analytics")
+    public EventAnalyticsResponse analytics(
+            @PathVariable UUID eventId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.analytics(eventId, user);
     }
 
     @PostMapping("/events/{eventId}/check-in")

@@ -22,6 +22,7 @@ Base path: `/api/v1`
 | GET | `/api/v1/event-categories` | Public | Active |
 | GET | `/api/v1/events` | Public | Active; all published events, soonest first, with seat availability (clients split upcoming/past by date) |
 | GET | `/api/v1/events/{slug}` | Public | Active; published event detail with seat availability |
+| WS | `/api/v1/ws/seats` | Public, allowed CORS origins only | Active; live remaining seats for one published event (see below) |
 | POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events and classroom paid simulation, capacity enforced under a row lock |
 | POST | `/api/v1/registrations/{registrationId}/mock-payment/confirm` | Registration owner | Active only when mock payments are enabled; no real payment |
 | POST | `/api/v1/events/{eventId}/guest-registrations` | Public | Active; free events only, one active seat per guest email |
@@ -43,6 +44,7 @@ Base path: `/api/v1`
 | DELETE | `/api/v1/admin/events/{eventId}?version=` | `EVENT_UPDATE`, assigned scope | Active for DRAFT/REJECTED; published events are cancelled instead |
 | GET | `/api/v1/admin/events/{eventId}/registrations` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; paginated participant list, `query` searches name/email/number |
 | POST | `/api/v1/admin/events/{eventId}/check-in` | `REGISTRATION_CHECK_IN`, assigned scope, or SUPER_ADMIN | Active; checks in a confirmed registration by its registration number |
+| GET | `/api/v1/admin/events/{eventId}/analytics` | `REGISTRATION_VIEW_ALL`, assigned scope, or SUPER_ADMIN | Active; signups, drop-offs and show rate for one event |
 | GET | `/api/v1/admin/events/{eventId}/change-requests` | Assigned ADMIN or SUPER_ADMIN | Active |
 | POST | `/api/v1/admin/events/{eventId}/change-requests?version=` | `EVENT_UPDATE`, published event | Active |
 | POST | `/api/v1/event-images` | ADMIN, SUPER_ADMIN | Active when storage is enabled |
@@ -125,12 +127,17 @@ POST /api/v1/guest-registrations/lookup
 | Error code | HTTP | When |
 | --- | --- | --- |
 | `GUEST_PAID_REGISTRATION_UNAVAILABLE` | 409 | The event is paid; paying needs a signed-in owner |
-| `GUEST_ALREADY_REGISTERED` | 409 | This email (case-insensitive) already holds an active guest seat for the event |
+| `GUEST_ALREADY_REGISTERED` | 409 | This email already holds an active seat for the event, as a guest or member (case-insensitive, surrounding whitespace ignored) |
 | `REGISTRATION_NOT_FOUND` | 404 | Lookup number and email do not match the same guest registration |
 
 The guest row is stored with `registered_as_guest = true` and no participant or submitting account.
 Capacity, registration windows and check-in work the same as for members. Guests cannot cancel
 online. Responses include `registeredAsGuest`, also shown on the admin participant list.
+
+Both member and guest registration check the attendee email against all active registrations for
+that event under the event-row lock. Members receive `ALREADY_REGISTERED` on an email conflict.
+The same email may register for other events or after cancellation; phone numbers are not unique.
+Member paid-payment retries still resume their existing registration without creating another seat.
 
 When an account with a **verified** email signs up or signs in, every unlinked guest registration
 with that email is linked to its participant (`guest_linked_at` is set) and appears in
@@ -148,6 +155,10 @@ POST /api/v1/admin/events/{eventId}/check-in
 { "registrationNumber": "REG-7KQ2M9XA4P" }
 ```
 
+Offline check-ins synced later may add `"checkedInAt"` (ISO-8601) with the time the code was
+scanned, so the record shows the arrival rather than the sync time. Without it the server time is
+used. A time up to 5 minutes ahead of the server is capped at now.
+
 A successful check-in returns the participant list row with `status` `CHECKED_IN` and
 `checkedInAt` set, records the staff member in `checked_in_by_user_id`, and appends a status history
 row. A checked-in registration still counts toward capacity.
@@ -158,7 +169,56 @@ row. A checked-in registration still counts toward capacity.
 | `INVALID_EVENT_STATE` | 409 | Event is not published |
 | `REGISTRATION_NOT_FOUND` | 404 | Unknown number or a number from another event |
 | `ALREADY_CHECKED_IN` | 409 | The registration was already checked in |
-| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` (pending payment or cancelled) |
+| `REGISTRATION_NOT_CHECKABLE` | 409 | The registration is not `CONFIRMED` or `NO_SHOW` (pending payment or cancelled) |
+| `INVALID_CHECK_IN_TIME` | 400 | `checkedInAt` is more than 5 minutes in the future or before the registration |
+
+### Event analytics
+
+```json
+GET /api/v1/admin/events/{eventId}/analytics
+{
+  "signups": 120, "memberSignups": 95, "guestSignups": 25,
+  "dropOffs": 14, "dropOffRate": 0.117, "cancelledByAdmin": 2,
+  "confirmed": 0, "checkedIn": 80, "noShows": 24, "showRate": 0.769,
+  "eventEnded": true,
+  "dailySignups": [{ "date": "2026-10-20", "count": 12 }]
+}
+```
+
+- `signups` counts every registration ever made for the event, members and guests.
+- `dropOffs` = `CANCELLED_BY_USER` + `PAYMENT_EXPIRED`. Administrator cancellations are
+  `cancelledByAdmin`; registrations cancelled with the event are in neither.
+- `showRate` = `checkedIn` / (`checkedIn` + `noShows`), and is `null` until `endAt` has passed.
+  Once the event has ended, `noShows` also counts registrations still `CONFIRMED`; `confirmed` is the
+  raw status count. Rates are `null` when there is nothing to divide by.
+- `dailySignups` groups by the registration day in the event's own timezone, oldest first.
+- A scheduled job marks registrations still `CONFIRMED` as `NO_SHOW` once `NO_SHOW_GRACE_PERIOD`
+  (default 6 hours) has passed since `endAt`, checking every `NO_SHOW_SWEEP_INTERVAL` (default 5
+  minutes). A `NO_SHOW` can still be checked in, for late arrivals and offline check-ins synced later.
+
+An administrator not assigned to the event gets `EVENT_NOT_FOUND` (404).
+
+## Live remaining seats
+
+Event pages open a WebSocket to `/api/v1/ws/seats` and send which event they show:
+
+```json
+{ "subscribe": "<eventId>" }
+```
+
+The server answers at once and again whenever the count changes, never with an unchanged count:
+
+```json
+{ "eventId": "<eventId>", "remainingSeats": 7, "full": false }
+```
+
+- `remainingSeats` is left out when the event hides its seat count; `full` is always sent.
+- An unknown, unpublished or malformed subscription closes the socket with code 1008.
+- Each API instance re-reads the counts of the events its own sockets watch every
+  `SEAT_POLL_INTERVAL` (default 2 seconds), so updates reach every page with several replicas and
+  no message broker.
+- Only origins in `CORS_ALLOWED_ORIGINS` may open the socket. Proxies must pass the `Upgrade` header
+  and allow long idle reads (the frontend nginx and the k8s ingress are configured for this).
 
 ## Event image storage
 

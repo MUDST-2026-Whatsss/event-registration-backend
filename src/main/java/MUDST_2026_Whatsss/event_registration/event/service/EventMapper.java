@@ -129,7 +129,7 @@ public class EventMapper {
     }
 
     /** Null when the organiser hides the count; never negative if capacity was lowered later. */
-    private static Integer remainingSeats(Event event, long activeRegistrations) {
+    public static Integer remainingSeats(Event event, long activeRegistrations) {
         if (!event.isShowRemainingSeats()) {
             return null;
         }

@@ -54,6 +54,7 @@ public enum ErrorCode {
     GUEST_PAID_REGISTRATION_UNAVAILABLE(HttpStatus.CONFLICT, "Sign in to register for paid events."),
     ALREADY_CHECKED_IN(HttpStatus.CONFLICT, "This registration has already been checked in."),
     REGISTRATION_NOT_CHECKABLE(HttpStatus.CONFLICT, "This registration cannot be checked in."),
+    INVALID_CHECK_IN_TIME(HttpStatus.BAD_REQUEST, "The check-in time is in the future or before the registration."),
 
     INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "The uploaded file is not a supported image."),
     MEDIA_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested media was not found."),
