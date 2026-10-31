@@ -128,7 +128,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/ws/seats").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/events/*/guest-registrations",
-                                "/api/v1/guest-registrations/lookup").permitAll()
+                                "/api/v1/guest-registrations/lookup",
+                                "/api/v1/guest-registrations/mock-payment/confirm").permitAll()
 
                         .anyRequest().authenticated())
 

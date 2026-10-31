@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Registration without an account. Both endpoints are opened in {@code SecurityConfig}; CSRF still
+ * Registration without an account. These endpoints are opened in {@code SecurityConfig}; CSRF still
  * applies. The ticket lookup is a POST so the email never appears in a URL or access log.
  */
 @RestController
@@ -39,5 +39,10 @@ public class GuestRegistrationController {
     @PostMapping("/guest-registrations/lookup")
     public RegistrationResponse lookup(@Valid @RequestBody GuestTicketLookupRequest request) {
         return service.guestTicket(request);
+    }
+
+    @PostMapping("/guest-registrations/mock-payment/confirm")
+    public RegistrationResponse confirmMockPayment(@Valid @RequestBody GuestTicketLookupRequest request) {
+        return service.confirmGuestMockPayment(request);
     }
 }

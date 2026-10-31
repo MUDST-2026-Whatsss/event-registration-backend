@@ -25,8 +25,9 @@ Base path: `/api/v1`
 | WS | `/api/v1/ws/seats` | Public, allowed CORS origins only | Active; live remaining seats for one published event (see below) |
 | POST | `/api/v1/events/{eventId}/registrations` | `REGISTRATION_CREATE_SELF` | Active; free events and classroom paid simulation, capacity enforced under a row lock |
 | POST | `/api/v1/registrations/{registrationId}/mock-payment/confirm` | Registration owner | Active only when mock payments are enabled; no real payment |
-| POST | `/api/v1/events/{eventId}/guest-registrations` | Public | Active; free events only, one active seat per guest email |
+| POST | `/api/v1/events/{eventId}/guest-registrations` | Public | Active; free events and opt-in mock paid events, one active seat per email |
 | POST | `/api/v1/guest-registrations/lookup` | Public | Active; guest ticket by registration number and email |
+| POST | `/api/v1/guest-registrations/mock-payment/confirm` | Public | Matching guest ticket number/email; mock payments must be enabled |
 | GET | `/api/v1/invitations` | Authenticated | Active; caller's published event invitations |
 | GET | `/api/v1/registrations` | `REGISTRATION_READ_SELF` | Active; caller's registrations, newest first |
 | GET | `/api/v1/registrations/{registrationId}` | `REGISTRATION_READ_SELF` | Active; caller's own registration only |
@@ -113,8 +114,9 @@ repeated confirmation returns the same registration. No bank transaction or prov
 
 ### Guest registration
 
-Visitors may register for free events without an account. Both endpoints are public but still need
-the CSRF header.
+Visitors may register without an account. Free events confirm immediately; paid events use the
+same mock payment process as members when `MOCK_PAYMENTS_ENABLED=true`. All guest endpoints
+are public but still need the CSRF header.
 
 ```json
 POST /api/v1/events/{eventId}/guest-registrations
@@ -122,17 +124,27 @@ POST /api/v1/events/{eventId}/guest-registrations
 
 POST /api/v1/guest-registrations/lookup
 { "registrationNumber": "REG-XXXXXXXXXX", "email": "required@example.com" }
+
+POST /api/v1/guest-registrations/mock-payment/confirm
+{ "registrationNumber": "REG-XXXXXXXXXX", "email": "required@example.com" }
 ```
 
 | Error code | HTTP | When |
 | --- | --- | --- |
-| `GUEST_PAID_REGISTRATION_UNAVAILABLE` | 409 | The event is paid; paying needs a signed-in owner |
+| `GUEST_PAID_REGISTRATION_UNAVAILABLE` | 409 | Paid guest registration is disabled in this environment |
+| `PAID_REGISTRATION_UNAVAILABLE` | 409 | Mock confirmation is disabled in this environment |
 | `GUEST_ALREADY_REGISTERED` | 409 | This email already holds an active seat for the event, as a guest or member (case-insensitive, surrounding whitespace ignored) |
 | `REGISTRATION_NOT_FOUND` | 404 | Lookup number and email do not match the same guest registration |
 
 The guest row is stored with `registered_as_guest = true` and no participant or submitting account.
 Capacity, registration windows and check-in work the same as for members. Guests cannot cancel
 online. Responses include `registeredAsGuest`, also shown on the admin participant list.
+
+Paid guest registration creates `PENDING_PAYMENT` and reserves one seat. Confirmation checks the
+guest registration number and email, then persists `CONFIRMED` and its timestamp. Repeating
+confirmation does not create another registration or status-history entry. Member registrations
+cannot be confirmed through this public endpoint. No real payment is collected. The browser
+retains a pending ticket for retries on the same form without creating another seat.
 
 Both member and guest registration check the attendee email against all active registrations for
 that event under the event-row lock. Members receive `ALREADY_REGISTERED` on an email conflict.

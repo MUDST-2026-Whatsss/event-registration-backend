@@ -125,7 +125,7 @@ class GuestRegistrationIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void guestsCannotRegisterForPaidOrUnpublishedEvents() {
+    void guestsCannotRegisterForPaidEventsWhenMockPaymentsAreDisabledOrForUnpublishedEvents() {
         UUID paid = fixtures.publishedEvent(admin, "Guest paid", 3);
         var event = eventRepository.findById(paid).orElseThrow();
         event.setEventType(EventType.PAID);
@@ -137,6 +137,8 @@ class GuestRegistrationIT extends PostgresIntegrationTest {
                 ErrorCode.GUEST_PAID_REGISTRATION_UNAVAILABLE);
         assertError(() -> service.registerGuest(draft, guest("Early", "early@example.test")),
                 ErrorCode.EVENT_NOT_FOUND);
+        assertError(() -> service.confirmGuestMockPayment(new GuestTicketLookupRequest("REG-NOTFOUND00", "payer@example.test")),
+                ErrorCode.PAID_REGISTRATION_UNAVAILABLE);
     }
 
     @Test
