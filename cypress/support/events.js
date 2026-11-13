@@ -29,11 +29,12 @@ export function eventRequest(title, eventCategoryId, maximumParticipants = 2) {
 }
 
 // Creates a draft as the admin; yields the created event.
-export function createDraftEvent(title, maximumParticipants) {
+// `overrides` replaces request fields, for example a paid event or invited users.
+export function createDraftEvent(title, maximumParticipants, overrides = {}) {
   cy.loginAs('admin')
   return cy.request('/api/v1/event-categories').then((categories) => {
     return cy.apiSend('POST', '/api/v1/admin/events',
-      eventRequest(title, categories.body[0].eventCategoryId, maximumParticipants))
+      { ...eventRequest(title, categories.body[0].eventCategoryId, maximumParticipants), ...overrides })
   }).then((res) => {
     expect(res.status).to.eq(201)
     expect(res.body).to.have.property('status', 'DRAFT')
@@ -57,8 +58,8 @@ export function submitForReview(event) {
 }
 
 // Runs create, submit and approve; yields the published event.
-export function publishEvent(title, maximumParticipants) {
-  return createDraftEvent(title, maximumParticipants)
+export function publishEvent(title, maximumParticipants, overrides = {}) {
+  return createDraftEvent(title, maximumParticipants, overrides)
     .then((event) => submitForReview(event))
     .then((review) => {
       return cy.apiSend('POST', `/api/v1/admin/event-reviews/${review.reviewId}/approve`,
