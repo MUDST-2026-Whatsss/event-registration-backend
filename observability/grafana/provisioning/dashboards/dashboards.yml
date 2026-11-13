@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: event-registration
+    folder: Event Registration
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

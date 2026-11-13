@@ -119,6 +119,9 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout").permitAll()
 
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // Prometheus scrapes without a session; the endpoint only exists when
+                        // MANAGEMENT_ENDPOINTS exposes it, and nginx never proxies /actuator.
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/event-categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/event-images/**").permitAll()
