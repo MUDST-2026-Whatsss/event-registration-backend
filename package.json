@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test:e2e": "node scripts/cypress-runner.js",
-    "test:e2e:open": "node scripts/cypress-runner.js --open"
+    "test:e2e:open": "node scripts/cypress-runner.js --open",
+    "e2e:coverage": "node scripts/api-e2e-coverage.mjs"
   },
   "devDependencies": {
     "cypress": "^14.0.0"

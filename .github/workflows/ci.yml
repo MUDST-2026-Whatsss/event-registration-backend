@@ -70,6 +70,10 @@ jobs:
       - name: Run Backend API Cypress E2E tests
         run: npm run test:e2e
 
+      - name: Publish API E2E endpoint coverage
+        if: always()
+        run: npm run --silent e2e:coverage -- --markdown >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout Frontend
         uses: actions/checkout@v4
         with:
