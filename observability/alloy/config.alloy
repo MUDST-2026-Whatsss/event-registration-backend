@@ -1,0 +1,61 @@
+// Ships the logs of this Compose project's containers to Loki.
+// Labels: service (api, frontend, minio, ...), container, level (Spring log level, api only).
+
+discovery.docker "project" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=event-registration"]
+  }
+}
+
+discovery.relabel "project" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "project" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.project.targets
+  relabel_rules = discovery.relabel.project.rules
+  forward_to    = [loki.process.spring.receiver]
+}
+
+loki.process "spring" {
+  // Spring Boot console format: "<timestamp>  INFO <pid> --- [app] [thread] [traceId-spanId] ..."
+  stage.regex {
+    expression = "^\\S+\\s+(?P<level>TRACE|DEBUG|INFO|WARN|ERROR)\\s"
+  }
+
+  stage.regex {
+    expression = "\\[(?P<trace_id>[0-9a-f]{32})-[0-9a-f]{16}\\]"
+  }
+
+  stage.labels {
+    values = { level = "" }
+  }
+
+  // Trace ids are unique per request, so keep them out of the label index.
+  stage.structured_metadata {
+    values = { trace_id = "" }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
