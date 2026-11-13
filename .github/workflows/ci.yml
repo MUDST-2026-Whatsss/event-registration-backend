@@ -59,6 +59,10 @@ jobs:
           sed -i 's/replace-with-openssl-rand-base64-48/dGhpcy1pcy1hLXJhbmRvbS1qd3Qtc2VjcmV0LWZvci1jaS10ZXN0aW5nLTIwMjY=/' .env
           sed -i 's/replace-with-minio-access-key/event_minio_admin/' .env
           sed -i 's/replace-with-a-long-random-minio-secret/event_minio_ci_secret_12345/' .env
+          # The API E2E suite sends several hundred requests in under a minute from one IP. Raise only the
+          # general per-IP limit for this throwaway stack; the login limits stay at their real values.
+          sed -i 's/^RATE_LIMIT_GLOBAL_PER_IP=.*/RATE_LIMIT_GLOBAL_PER_IP=5000/' .env
+          grep -q '^RATE_LIMIT_GLOBAL_PER_IP=5000$' .env
 
       - name: Start services with Docker Compose
         run: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build postgres minio api
