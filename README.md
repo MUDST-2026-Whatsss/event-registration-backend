@@ -149,6 +149,17 @@ docker compose -f docker-compose.server.yml logs -f api
 This mode does not depend on the local PostgreSQL container. Do not run destructive tests or test
 fixtures against a shared/production database.
 
+## Observability (Grafana, Prometheus, Loki, Tempo)
+
+Add `docker-compose.observability.yml` to any of the stacks above to collect metrics, logs, and
+traces, then open Grafana at `http://localhost:3000` (`admin` / `admin`):
+
+```bash
+docker compose -f docker-compose.server.yml -f docker-compose.observability.yml up -d
+```
+
+See [`docs/observability.md`](docs/observability.md) for the dashboard, alerts, and settings.
+
 ## Deploy to Kubernetes (Minikube)
 
 Manifests are in `k8s/`:
@@ -296,4 +307,5 @@ V8 adds PostgreSQL table/column documentation without changing business data.
 - [`docs/development.md`](docs/development.md): development and verification workflow
 - [`docs/docker-delivery.md`](docs/docker-delivery.md): self-contained instructor handout copied into release bundles
 - [`docs/docker-setup.md`](docs/docker-setup.md): clone-to-running Docker setup and database backup/restore
+- [`docs/observability.md`](docs/observability.md): metrics, logs, and traces in Grafana
 - [`src/main/resources/db/migration/README.md`](src/main/resources/db/migration/README.md): migration history notes
